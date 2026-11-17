@@ -1,7 +1,10 @@
 /* OPTICST NEXUS — plataforma; acentos morados #9076DA heredados de la app de Yael
    Marca Nexus: Cian Tech #00E5FF · Azul Eléctrico #2E7BFF · Violeta Pro #A020FF
    Azul Noche #0A0F1F · Blanco #FFFFFF. Yael: Turquesa #40C5D2 · Lila #9076DA.
-   Sin fuentes web: pila system-ui (la app debe funcionar offline). */
+   Tipografía principal del manual: Orbitron (bundled local en fonts/,
+   la app sigue funcionando offline). */
+/* Orbitron variable (400-900), solo latin, para el nombre de la app en el splash. */
+@font-face{font-family:'Orbitron';font-style:normal;font-weight:400 900;font-display:swap;src:url(fonts/orbitron-latin.woff2) format('woff2')}
 :root{
   --purple:#9076DA; --purple-dark:#6f55b8; --purple-light:#efe9fb;
   --violet-pro:#A020FF; --blue-electric:#2E7BFF; --cyan-tech:#00E5FF;
@@ -24,17 +27,23 @@ h4{margin:.4rem 0 .3rem}
 p{margin:.4rem 0}
 .splash{background:#000;border-radius:var(--radius);padding:1.2rem 1rem .9rem;text-align:center;margin-bottom:1rem}
 .splash-logo{max-width:260px;width:100%;height:auto}
-.splash-name{color:#fff;font-weight:800;letter-spacing:.35em;margin-top:.4rem}
+.splash-name{font-family:'Orbitron',sans-serif;color:#fff;font-weight:800;letter-spacing:.35em;margin-top:.4rem}
 .splash-tag{color:#00E5FF;font-size:.9rem;margin-top:.15rem}
 .setup-logo{max-width:280px;width:100%;height:auto;margin-bottom:.5rem}
 .center{text-align:center}
-/* ---------- Splash de arranque (v2.1 punto 8) ----------
-   Pantalla completa negra con el logo Nexus COMO ES (marca-nexus.png)
+/* ---------- Splash de arranque (v2.1 punto 8, refinado v2.2) ----------
+   Pantalla completa negra con el logo Nexus en su VERSIÓN COLOR
+   PRINCIPAL (isotipo marca-nexus.png + nombre OPTICST NEXUS en Orbitron,
+   "ST" en degradado Azul Eléctrico → Violeta Pro como en el manual)
    y la leyenda "By Caremi Sistems Technology". Solo al abrir la app
    ya configurada; se puede saltar con un toque. */
 #splashStart{position:fixed;inset:0;z-index:100;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;cursor:pointer;padding:1rem}
 #splashStart[hidden]{display:none}
 #splashStart img{width:min(340px,82vw);height:auto}
+#splashStart .splash-lockup{text-align:center;line-height:1.15}
+#splashStart .splash-name{font-family:'Orbitron',sans-serif;font-weight:800;font-size:clamp(1.7rem,8vw,2.4rem);letter-spacing:.06em;color:#fff;margin-top:0}
+#splashStart .splash-grad{background:linear-gradient(90deg,#2E7BFF,#A020FF);-webkit-background-clip:text;background-clip:text;color:transparent}
+#splashStart .splash-name2{font-family:'Orbitron',sans-serif;font-weight:700;font-size:clamp(1.15rem,5.5vw,1.55rem);letter-spacing:.6em;text-indent:.6em;color:#fff;margin-top:.15rem}
 #splashStart .splash-by{color:#b9b3c9;font-size:.92rem;letter-spacing:.06em;text-align:center}
 /* Fila de utilidades del panel principal (v2.1 punto 8): aquí viven
    Configuración y el aviso DEMO tras quitar el encabezado superior. */
@@ -210,15 +219,21 @@ code{background:var(--purple-light);padding:.1rem .3rem;border-radius:5px}
    tiene break-inside/page-break-inside avoid para que ninguna se corte
    entre páginas; si una hoja tiene más de 9 y se parte, cada hoja es
    su propio documento (.doc) y empieza en página nueva. La marca de
-   agua es el logo de Luna (.doc-watermark-luna): si logo-luna.png no
-   existe, el fondo simplemente no se pinta (nunca imagen rota) y el
-   contenido va por encima (z-index) para que no tape el texto. */
+   agua es el logo de Luna en su versión fuerte
+   (.doc-watermark-luna, logo-luna-fuerte.png): si no existe, el fondo
+   simplemente no se pinta (nunca imagen rota) y el contenido va por
+   encima (z-index) para que no tape el texto. */
 .doc-orden{position:relative;overflow:hidden}
 .doc-orden>*:not(.doc-watermark){position:relative;z-index:1}
 /* v2.1: el logo de Luna en el encabezado no debe perderse: más grande
    (84px) y en una pastilla blanca con borde para que el trazo fino
-   morado se vea firme sobre el fondo claro. */
-.doc-head-luna img{height:84px;width:auto;background:#fff;border-radius:8px;padding:4px;box-shadow:0 0 0 1px var(--line)}
+   morado se vea firme sobre el fondo claro.
+   v2.3: especificidad — `.doc-head-luna img` (0,1,1) perdía contra
+   `.doc .doc-head img` (0,2,1, línea 203) y el logo quedaba a 56px;
+   con `.doc .doc-head-luna img` (0,2,1, y después en el archivo) la
+   altura real es 84px. La imagen es la versión fuerte
+   (logo-luna-fuerte.png), que se lee a 84px. */
+.doc .doc-head-luna img{height:84px;width:auto;background:#fff;border-radius:8px;padding:4px;box-shadow:0 0 0 1px var(--line)}
 .orden-hoja-info{font-size:.9rem}
 .orden-label{min-height:2.4in}
 .doc-orden-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:.4rem;align-content:start}
@@ -278,15 +293,22 @@ code{background:var(--purple-light);padding:.1rem .3rem;border-radius:5px}
 .doc-comprobante{max-width:5.5in;margin:0 auto;position:relative;overflow:hidden}
 .doc-comprobante .banner-top{background:var(--grad-yael);color:#fff;border-radius:8px;padding:.6rem .9rem;display:flex;justify-content:space-between;align-items:center}
 .doc-comprobante .banner-top .doc-title{color:#fff}
+/* v2.3: el logo de Yael en el banner del comprobante se veía pálido
+   (morado sobre el degradado turquesa→violeta): va en pastilla
+   blanca, mismo patrón que la pastilla de Luna. La historia clínica
+   NO usa este banner (usa docHead sobre fondo blanco), así que no se
+   toca. */
 .doc-comprobante .banner-logo{width:140px;height:auto;flex:none}
-.doc-watermark{position:absolute;inset:0;z-index:0;background-image:url(logo.png);background-repeat:no-repeat;background-position:center;background-size:min(420px,85%) auto;opacity:.08;pointer-events:none;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+.doc-watermark{position:absolute;inset:0;z-index:0;background-image:url(logo-yael-circular.png);background-repeat:no-repeat;background-position:center;background-size:min(380px,80%) auto;opacity:.10;pointer-events:none;print-color-adjust:exact;-webkit-print-color-adjust:exact}
 /* v2.1: la marca de agua de la orden es el logo de Luna CON SUS COLORES
    (morado + turquesa, nunca en gris). OJO: esta regla DEBE ir después de
    .doc-watermark y con doble clase: antes .doc-watermark-luna (una sola
    clase, línea ~214) perdía contra .doc-watermark por orden de aparición
-   y la orden mostraba el logo de Yael. Opacidad .14 para que el logo
-   Luna se reconozca claramente sin tapar el texto. */
-.doc-watermark.doc-watermark-luna{background-image:url(logo-luna.png);background-size:min(460px,88%) auto;opacity:.14}
+   y la orden mostraba el logo de Yael.
+   v2.3: versión fuerte (logo-luna-fuerte.png) y opacidad .14 → .22
+   para que el logo se reconozca claramente en color sin tapar el
+   texto. */
+.doc-watermark.doc-watermark-luna{background-image:url(logo-luna-fuerte.png);background-size:min(460px,88%) auto;opacity:.28}
 .doc-comprobante>*:not(.doc-watermark){position:relative;z-index:1}
 .doc-comprobante .garantias{font-size:.85rem;background:var(--purple-light);border-radius:8px;padding:.6rem .8rem}
 

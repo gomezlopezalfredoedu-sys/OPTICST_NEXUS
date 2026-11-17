@@ -23,15 +23,16 @@ const PROXIMA_VISITA_MESES = 10;
    en las órdenes de trabajo sale Luna; todo lo demás (comprobante,
    ticket, historia clínica, app) sigue con Yael / OPTICST NEXUS.
    La dirección y los teléfonos son los mismos de Calle 4.
-   El logo de Luna AÚN NO lo ha pasado Alfredo: se referencia
-   `logo-luna.png` con onerror (si no existe, se oculta la imagen y
-   queda solo el nombre en texto, sin imagen rota). NO se añade a la
-   caché de sw.js: cache.addAll fallaría al instalar si no existe. */
+   El logo es `logo-luna-fuerte.png` (v2.3: alfa dilatado 1px +
+   colores ×0.68 para que el trazo fino se lea a 84px y como marca de
+   agua; la versión normal `logo-luna.png` se perdía al achicar).
+   Se referencia con onerror (si no existe, se oculta la imagen y
+   queda solo el nombre en texto, sin imagen rota). */
 const LABORATORIO = {
   nombre: 'Laboratorio Óptico Luna',
   direccion: NEGOCIO.direccion,
   telefonos: NEGOCIO.telefonos,
-  logo: 'logo-luna.png'
+  logo: 'logo-luna-fuerte.png'
 };
 const LS_ORDENES_SEL = 'bly_ordenes_sel'; // selección de trabajos para armar hojas de órdenes
 const ETIQUETAS_POR_HOJA = 9;             // rejilla 3×3 en carta
@@ -1409,11 +1410,11 @@ function docHistoriaHTML(d) {
 }
 /* ---------- Fase 5: órdenes de trabajo — marca Luna, 1 etiqueta/trabajo ----------
    SOLO en las órdenes de trabajo va Laboratorio Óptico Luna (nombre en
-   texto + logo-luna.png con onerror: si el archivo aún no existe, la
-   imagen se oculta y queda solo el texto, sin imagen rota). En el HTML
-   de la orden NO aparece "Boutique de Lentes Yael" en ningún lado: ni
-   encabezado, ni etiquetas, ni notas al pie. El resto de documentos y
-   la app siguen con Yael. */
+   texto + logo-luna-fuerte.png con onerror: si el archivo aún no
+   existe, la imagen se oculta y queda solo el texto, sin imagen
+   rota). En el HTML de la orden NO aparece "Boutique de Lentes Yael"
+   en ningún lado: ni encabezado, ni etiquetas, ni notas al pie. El
+   resto de documentos y la app siguen con Yael. */
 function docOrdenHeadHTML() {
   return '<div class="doc-head doc-head-luna"><img src="' + LABORATORIO.logo + '" alt="Laboratorio Óptico Luna" onerror="this.style.display=\'none\'"><div><div class="doc-title">Orden de trabajo</div><div><strong>' + esc(LABORATORIO.nombre) + '</strong></div><div class="addr">' + esc(LABORATORIO.direccion) + ' · Tel. ' + esc(LABORATORIO.telefonos) + '</div></div></div>';
 }
@@ -1442,12 +1443,12 @@ function ordenEtiquetaHTML(d) {
 }
 /* Una hoja de órdenes: hasta 9 etiquetas (3×3) de UN solo proveedor,
    formato carta (el @page letter lo pone aplicarTamanoPagina('orden')).
-   La marca de agua es el logo de Luna (.doc-watermark-luna); si
-   logo-luna.png no existe, el fondo simplemente no se pinta y la hoja
-   queda sin marca de agua (nunca imagen rota: es fondo CSS, no <img>).
-   Estructura .doc estándar para que el compartir como imagen de Fase 3
-   la siga serializando si se habilita después (hoy NO se habilita el
-   botón para órdenes). */
+   La marca de agua es el logo de Luna en su versión fuerte
+   (.doc-watermark-luna, logo-luna-fuerte.png); si no existe, el fondo
+   simplemente no se pinta y la hoja queda sin marca de agua (nunca
+   imagen rota: es fondo CSS, no <img>).
+   El compartir como imagen NO se habilita para órdenes (hoy solo
+   ticket y comprobante tienen el botón). */
 function docOrdenHojaHTML(datos, proveedor, hojaNum, totalHojas) {
   datos = datos || [];
   hojaNum = hojaNum || 1;
@@ -1499,9 +1500,9 @@ function partirEnHojas(items, porHoja) {
    Subtotal (precios definidos), Descuento, TOTAL GRANDE en negrita,
    Pagado, Saldo en negrita, Estado y "Gracias por su preferencia".
    Todo el texto en negritas (v2.1, CSS .doc-ticket) para que no se
-   pierda al imprimir en la térmica de 58 mm. Sigue con las clases
-   .doc .doc-ticket para que el compartir como imagen de la Fase 3
-   (generarImagenDocumento) lo siga serializando.
+   pierda al imprimir en la térmica de 58 mm. El compartir como
+   imagen lo pinta directo en canvas 2D (v2.3, dibujarTicket), con las
+   mismas filas y totales que aquí.
    La graduación NO aparece en el ticket. */
 function docTicketHTML(d) {
   const v = d.venta || {}, c = d.cliente || {};
@@ -1514,13 +1515,10 @@ function docTicketHTML(d) {
   if (llevaLC(v)) filas.push(['LENTE DE CONTACTO — ' + v.lcTipo + ' ' + (v.lcMarca || '') + ' (caja de 6)', money(v.lcPrecioDef)]);
   if (v.tipoVenta === 'rebisel') filas.push(['REBISEL — ' + (v.rebiselConcepto || ''), money(v.armazonPrecioDef)]);
   if (v.tipoVenta === 'accesorio') filas.push(['ACCESORIO — ' + (v.accesorioDesc || ''), money(v.armazonPrecioDef)]);
-  // Descuento = precio definido total − total manual (campos que ya
-  // trae la venta; si falta el definido, se omite el bloque).
-  const precioDef = Number(v.precioDefTotal);
-  const tieneDef = Number.isFinite(precioDef) && v.precioDefTotal !== '' && v.precioDefTotal != null;
-  const descNum = Number(v.descuento);
-  const descuento = Number.isFinite(descNum) && v.descuento !== '' && v.descuento != null
-    ? descNum : (tieneDef ? precioDef - Number(v.totalManual || 0) : NaN);
+  // Descuento = precio definido total − total manual (totalesTicket,
+  // misma lógica que el pintor de canvas v2.3).
+  const t = totalesTicket(v);
+  const precioDef = t.precioDef, tieneDef = t.tieneDef, descuento = t.descuento;
   const estado = Number(v.saldo) > 0 ? 'PENDIENTE' : 'LIQUIDADO';
   return '<div class="doc doc-ticket">' +
     '<div class="tk-center"><img class="ticket-logo" src="logo-yael-circular-mono.png" alt="Boutique de Lentes Yael"></div>' +
@@ -1545,12 +1543,13 @@ function docComprobanteHTML(d) {
   const prox = new Date(v.fecha || hoyISO());
   prox.setMonth(prox.getMonth() + PROXIMA_VISITA_MESES);
   // La graduación NO aparece en el comprobante.
-  // Fase 3: el logo va directo sobre el degradado (logo.png es
-  // transparente; ya no lleva cuadro blanco) y lleva marca de agua al
+  // Fase 3: el logo va directo sobre el degradado con su contorno
+  // blanco (logo-yael-contorno-blanco.png, versión que mandó Alfredo;
+  // ya no lleva pastilla blanca) y lleva marca de agua al
   // fondo (div .doc-watermark, ver styles.css).
   return '<div class="doc doc-comprobante">' +
     '<div class="doc-watermark" aria-hidden="true"></div>' +
-    '<div class="banner-top"><img class="banner-logo" src="logo.png" alt="Boutique de Lentes Yael"><div style="text-align:right"><div class="doc-title" style="color:#fff">Comprobante de venta</div><div>PEDIDO No. ' + esc(v.folio || v.id || '') + '</div><div>FECHA ' + fechaMX(v.fecha) + '</div></div></div>' +
+    '<div class="banner-top"><img class="banner-logo" src="logo-yael-contorno-blanco.png" alt="Boutique de Lentes Yael"><div style="text-align:right"><div class="doc-title" style="color:#fff">Comprobante de venta</div><div>PEDIDO No. ' + esc(v.folio || v.id || '') + '</div><div>FECHA ' + fechaMX(v.fecha) + '</div></div></div>' +
     '<p><strong>Nombre:</strong> ' + esc(c.nombre || v.clienteNombre || '') + ' &nbsp; <strong>Móvil:</strong> ' + esc(c.telefono || v.telefono || '') + '</p>' +
     '<table><tr><th>Concepto</th><th>Detalle</th><th>Precio</th></tr>' +
     (v.armazonMaterial ? '<tr><td>Armazón</td><td>' + esc(v.armazonMaterial) + ' ' + esc(v.armazonDiseno) + ' · Modelo ' + esc(v.armazonModelo || '') + ' · Marca ' + esc(v.armazonMarca || '') + ' · Color ' + esc(v.armazonColor || '') + '</td><td>' + money(v.armazonPrecioDef) + '</td></tr>' : '') +
@@ -1637,132 +1636,386 @@ function imprimirDoc() {
 }
 
 /* ---------- Fase 3: compartir el documento como IMAGEN ----------
-   Sin librerías externas (todo offline): el documento visible se
-   serializa a SVG con <foreignObject>, se dibuja en un canvas a 2x y
-   se exporta como PNG para compartirlo con el menú nativo de Android
-   (WhatsApp, impresora, etc.). Fallbacks en orden:
+   Sin librerías externas (todo offline): el documento se pinta
+   directo en un canvas 2D (v2.3; el camino SVG+foreignObject de
+   v1/v2.1 se abandonó porque el <img> del SVG fallaba en el celular)
+   y se exporta como PNG para compartirlo con el menú nativo de
+   Android (WhatsApp, impresora, etc.). Fallbacks en orden:
    1) navigator.share con archivos -> 2) descarga del PNG y aviso ->
    3) si la imagen no se pudo generar, texto por share / wa.me (el
    comportamiento anterior; el botón nunca queda muerto). Cancelar el
    menú de compartir no dispara ningún fallback.
-   v2.1: el CSS incrustado se limpia de url() externas (en algunos
-   Chrome de Android rompían el dibujo del SVG), se reintenta a 1x si
-   falla a 2x, hay timeout de 20 s, y si la imagen no se genera se
-   muestra el error real en pantalla antes de compartir el texto. */
-function construirSvgDocumento(html, css, ancho, alto, escala) {
-  // Función pura (sin DOM): construye el SVG que incrusta el HTML del
-  // documento. Se prueba en Node extrayéndola de este archivo.
-  // v2.1: la escala es parámetro (2x por defecto; si el dibujo a 2x
-  // falla en el celular se reintenta a 1x desde compartirDoc).
-  const k = (escala && escala > 0) ? escala : 2;
-  const w = Math.max(1, Math.round(ancho || 0));
-  const h = Math.max(1, Math.round(alto || 0));
-  return '<svg xmlns="http://www.w3.org/2000/svg" width="' + (w * k) + '" height="' + (h * k) + '" viewBox="0 0 ' + w + ' ' + h + '">' +
-    '<foreignObject x="0" y="0" width="100%" height="100%">' +
-    '<div xmlns="http://www.w3.org/1999/xhtml"><style>' + css + '</style>' + html + '</div>' +
-    '</foreignObject></svg>';
-}
-function limpiarCssParaSvg(css) {
-  // v2.1: quita del CSS incrustado en el SVG todas las referencias
-  // url(...) externas (logo.png, logo-luna.png, etc.). Un SVG cargado
-  // como imagen debe ser autocontenido: esas referencias no cargan y
-  // en algunos Chrome de Android hacen fallar el dibujo del documento
-  // (el botón se quedaba en "Generando imagen…" y caía al texto).
-  // Las imágenes <img> y la marca de agua ya van como data URL en
-  // línea (ver generarImagenDocumento), así que no se pierde nada.
-  // Solo se conservan los url(data:...) que ya son autocontenidos.
-  // (Se decide con función de reemplazo y no con lookahead, porque el
-  // cuantificador opcional de la comilla permitía saltárselo.)
-  return String(css || '').replace(/url\(\s*(['"]?)([^)]*?)\1\s*\)/gi, (m, q, inner) => {
-    const v = String(inner || '').trim();
-    return (/^data:/i.test(v)) ? m : 'none';
+   Se intenta a 2x y, si el pintado falla, se reintenta a 1x (menos
+   memoria); si ambas fallan, el error real se muestra en pantalla
+   antes de compartir el texto. */
+/* ---------- v2.3: compartir el documento como IMAGEN (canvas 2D) ----------
+   Sin librerías externas (todo offline). El camino SVG+foreignObject
+   de v1/v2.1 se ABANDONA: en el celular el <img> del SVG disparaba
+   onerror a 2x y a 1x ("No se pudo dibujar el documento (SVG)") y el
+   botón caía al texto. Ahora el documento se pinta directo en un
+   canvas 2D, sin SVG, sin foreignObject y sin cargar el SVG como
+   imagen. Los logos se cargan con new Image() normal desde archivos
+   locales (logo.png, logo-yael-circular-mono.png): esas imágenes ya
+   se muestran en el DOM y cargan bien.
+   Flujo (se conserva): navigator.share con archivos -> descarga del
+   PNG -> texto como último recurso. Si el pintor falla, el error real
+   se muestra en pantalla (ver compartirDoc).
+   Los pintores son funciones puras de dibujo (ctx 2D + doc) con dos
+   pasadas: dibujar=false solo mide (para conocer el alto exacto antes
+   de dimensionar el canvas), dibujar=true pinta. Se prueban en Node
+   con un stub de ctx 2D que registra los fillText. */
+function cargarImagen(src) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.onerror = () => rej(new Error('No se pudo cargar ' + src));
+    img.src = src;
   });
 }
-function imagenADataURL(src) {
-  // fetch local + FileReader: la imagen queda incrustada como data URL
-  // para que el SVG la pinte sin red.
-  return fetch(src).then(r => {
-    if (!r.ok) throw new Error('HTTP ' + r.status + ' al cargar ' + src);
-    return r.blob();
-  }).then(blob => new Promise((res, rej) => {
-    const fr = new FileReader();
-    fr.onload = () => res(fr.result);
-    fr.onerror = () => rej(new Error('No se pudo leer ' + src));
-    fr.readAsDataURL(blob);
-  }));
+/* Trazo de rectángulo redondeado (no se usa ctx.roundRect: no existe
+   en WebView antiguos de Android). */
+function trazoRedondeado(ctx, x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
 }
-async function generarImagenDocumento(nodo, escala) {
-  // v2.1: escala 2x por defecto; compartirDoc reintenta a 1x si falla.
-  // Los errores llevan la etapa ("al medir", "al dibujar", ...) para
-  // poder diagnosticar en el celular qué parte falla.
-  const k = (escala && escala > 0) ? escala : 2;
-  let ancho, alto;
-  try {
-    ancho = nodo.offsetWidth || nodo.getBoundingClientRect().width;
-    alto = nodo.offsetHeight || nodo.getBoundingClientRect().height;
-  } catch (e) { throw new Error('al medir el documento: ' + e.message); }
-  if (!ancho || !alto) throw new Error('No se pudo medir el documento.');
-  const clon = nodo.cloneNode(true);
-  // Estilos: se incrustan los de styles.css (fetch local). Si el fetch
-  // falla, se sigue con una base mínima; los estilos en línea del clon
-  // se conservan. Las reglas @media print del archivo no aplican aquí
-  // (el contexto es pantalla), así que no contaminan la imagen.
-  // v2.1: se limpian las url() externas del CSS (ver limpiarCssParaSvg).
-  let css = '';
-  try {
-    const r = await fetch('styles.css');
-    if (r.ok) css = await r.text();
-  } catch (e) { css = ''; }
-  css = limpiarCssParaSvg(css);
-  css += '\n.doc{color:#241f31;background:#fff;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;line-height:1.45;}';
-  // Imágenes del documento (logo.png, etc.) como data URL. Si una no
-  // carga, se quita solo esa imagen y se sigue con el resto.
-  const imgs = Array.from(clon.querySelectorAll('img'));
-  await Promise.all(imgs.map(async img => {
-    const src = img.getAttribute('src');
-    if (!src || src.indexOf('data:') === 0) return;
-    try { img.src = await imagenADataURL(src); }
-    catch (e) { img.remove(); }
-  }));
-  // Marca de agua: su fondo es url(logo.png) — o url(logo-luna.png)
-  // en las órdenes de trabajo (Fase 5) —; también se incrusta como
-  // data URL. Si falla, el documento se comparte sin marca de agua.
-  const marcas = Array.from(clon.querySelectorAll('.doc-watermark'));
-  await Promise.all(marcas.map(async m => {
-    try {
-      const src = m.classList.contains('doc-watermark-luna') ? 'logo-luna.png' : 'logo.png';
-      const url = await imagenADataURL(src);
-      m.style.backgroundImage = 'url("' + url + '")';
-    } catch (e) { /* sigue sin marca de agua */ }
-  }));
-  const svg = construirSvgDocumento(clon.outerHTML, css, ancho, alto, k);
-  const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  try {
-    const img = new Image();
-    await new Promise((res, rej) => {
-      // v2.1: timeout para que el botón nunca se quede colgado en
-      // "Generando imagen…" si el dibujo no responde.
-      const to = setTimeout(() => rej(new Error('Tiempo agotado al dibujar el documento (SVG).')), 20000);
-      img.onload = () => { clearTimeout(to); res(); };
-      img.onerror = () => { clearTimeout(to); rej(new Error('No se pudo dibujar el documento (SVG).')); };
-      img.src = url;
-    });
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(ancho * k);
-    canvas.height = Math.round(alto * k);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Canvas no disponible.');
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    const png = await new Promise((res, rej) => canvas.toBlob(
-      b => (b ? res(b) : rej(new Error('No se pudo exportar el PNG.'))), 'image/png'));
-    return png;
-  } finally {
-    URL.revokeObjectURL(url);
+/* Envuelve un texto en líneas que quepan en maxW (usa el measureText
+   de la fuente actual del ctx). */
+function envolverTexto(ctx, txt, maxW) {
+  const palabras = String(txt == null ? '' : txt).split(/\s+/).filter(Boolean);
+  const lineas = [];
+  let actual = '';
+  for (const p of palabras) {
+    const prueba = actual ? actual + ' ' + p : p;
+    if (ctx.measureText(prueba).width <= maxW || !actual) actual = prueba;
+    else { lineas.push(actual); actual = p; }
   }
+  if (actual) lineas.push(actual);
+  return lineas;
 }
+function fuenteDe(familia, tam, negrita) {
+  return (negrita ? '700 ' : '') + tam + 'px ' + familia;
+}
+/* Dibuja un texto de un solo estilo en la línea base (x, y). Si
+   dibujar=false solo mide. Devuelve el ancho medido. */
+function texto(ctx, s, x, y, fuente, color, align, dibujar) {
+  ctx.font = fuente; ctx.fillStyle = color; ctx.textAlign = align || 'left'; ctx.textBaseline = 'alphabetic';
+  if (dibujar) ctx.fillText(s, x, y);
+  return ctx.measureText(s).width;
+}
+/* Párrafo con segmentos [{t, b}] (b = negrita) y salto de línea por
+   palabras. `y` es la línea base de la primera línea. Devuelve el
+   alto consumido (nº líneas × inter). Si dibujar=false solo mide. */
+function parrafoMixto(ctx, segmentos, x, y, maxW, familia, tam, inter, dibujar, color) {
+  const palabras = [];
+  (segmentos || []).forEach(seg => {
+    String(seg.t == null ? '' : seg.t).split(/\s+/).filter(Boolean).forEach(w => palabras.push({ w, b: !!seg.b }));
+  });
+  const medir = (w, b) => { ctx.font = fuenteDe(familia, tam, b); return ctx.measureText(w).width; };
+  const espacio = medir(' ', false);
+  const lineas = [];
+  let linea = [], ancho = 0;
+  palabras.forEach(p => {
+    const wp = medir(p.w, p.b);
+    const extra = linea.length ? espacio : 0;
+    if (ancho + extra + wp > maxW && linea.length) { lineas.push(linea); linea = [p]; ancho = wp; }
+    else { linea.push(p); ancho += extra + wp; }
+  });
+  if (linea.length) lineas.push(linea);
+  if (dibujar) {
+    lineas.forEach((ln, i) => {
+      let cx = x;
+      ln.forEach((p, j) => {
+        ctx.font = fuenteDe(familia, tam, p.b);
+        ctx.fillStyle = color || '#241f31';
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillText(p.w, cx, y + i * inter);
+        cx += medir(p.w, p.b) + (j < ln.length - 1 ? espacio : 0);
+      });
+    });
+  }
+  return lineas.length * inter;
+}
+/* Precio definido total y descuento de una venta (misma lógica del
+   ticket en el DOM): el descuento es definido − manual si la venta no
+   lo trae. Lo usan docTicketHTML y el pintor de canvas v2.3. */
+function totalesTicket(v) {
+  v = v || {};
+  const precioDef = Number(v.precioDefTotal);
+  const tieneDef = Number.isFinite(precioDef) && v.precioDefTotal !== '' && v.precioDefTotal != null;
+  const descNum = Number(v.descuento);
+  const descuento = Number.isFinite(descNum) && v.descuento !== '' && v.descuento != null
+    ? descNum : (tieneDef ? precioDef - Number(v.totalManual || 0) : NaN);
+  return { precioDef, tieneDef, descuento };
+}
+/* Pinta el COMPROBANTE en un ctx 2D (refleja .doc-comprobante del
+   DOM: banner degradado Turquesa→Lila con pastilla blanca + logo,
+   Nombre/Móvil, tabla Concepto/Detalle/Precio, cantidad en palabras,
+   caja de garantías, firmas y marca de agua). Las coordenadas son en
+   px CSS (media carta 5.5in = 528px a 96dpi); la escala se aplica con
+   ctx.scale en generarImagenDocumento. Devuelve {ancho, alto} en px
+   de canvas (ya con la escala). Si dibujar=false solo mide. */
+function dibujarComprobante(ctx, doc, logo, escala, dibujar, marca, altoTotal) {
+  const k = (escala && escala > 0) ? escala : 2;
+  const v = (doc && doc.venta) || {}, c = (doc && doc.cliente) || {};
+  const F = 'system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif';
+  const INK = '#241f31';
+  const W = 528, M = 20, cw = W - 2 * M;
+  const LH = 17;
+  let y = M;
+  const prox = new Date(v.fecha || hoyISO());
+  prox.setMonth(prox.getMonth() + PROXIMA_VISITA_MESES);
+  // Marca de agua (logo circular de Yael, simétrico, alfa bajo,
+  // centrada detrás del contenido en AMBOS ejes: antes el logo ancho
+  // se veía cargado a la izquierda y hacia arriba porque su peso
+  // visual no está centrado; el círculo sí lo está. La posición
+  // vertical usa el alto total medido (altoTotal), que llega en la
+  // 2ª pasada; sin él se usa la posición anterior como respaldo).
+  if (dibujar && marca) {
+    ctx.save();
+    ctx.globalAlpha = 0.10;
+    const lw = 380, lh = lw * (marca.height / marca.width);
+    const wy = (altoTotal && altoTotal > lh) ? (altoTotal - lh) / 2 : 120;
+    ctx.drawImage(marca, (W - lw) / 2, wy, lw, lh);
+    ctx.restore();
+  }
+  // Banner degradado Turquesa #40C5D2 → Lila #9076DA.
+  const bannerH = 64;
+  if (dibujar) {
+    const g = ctx.createLinearGradient(M, 0, W - M, 0);
+    g.addColorStop(0, '#40C5D2'); g.addColorStop(1, '#9076DA');
+    trazoRedondeado(ctx, M, y, cw, bannerH, 8);
+    ctx.fillStyle = g; ctx.fill();
+    // v2.3.1: el logo del banner ya trae su propio contorno blanco
+    // (logo-yael-contorno-blanco.png, versión de Alfredo); ya no lleva
+    // pastilla blanca detrás.
+    if (logo) {
+      const lw = 140, lh = lw * (logo.height / logo.width);
+      ctx.drawImage(logo, M + 14, y + (bannerH - lh) / 2, lw, lh);
+    }
+    texto(ctx, 'COMPROBANTE DE VENTA', W - M - 12, y + 24, '800 19px ' + F, '#fff', 'right', true);
+    texto(ctx, 'PEDIDO No. ' + (v.folio || v.id || ''), W - M - 12, y + 43, '13px ' + F, '#fff', 'right', true);
+    texto(ctx, 'FECHA ' + fechaMX(v.fecha), W - M - 12, y + 58, '13px ' + F, '#fff', 'right', true);
+  }
+  y += bannerH + 14;
+  // Nombre / Móvil.
+  y += parrafoMixto(ctx, [{ t: 'Nombre: ', b: true }, { t: (c.nombre || v.clienteNombre || '') + '    ' }, { t: 'Móvil: ', b: true }, { t: c.telefono || v.telefono || '' }], M, y + 14, cw, F, 14, LH, dibujar, INK) + 8;
+  // Tabla Concepto / Detalle / Precio.
+  const xC = M, xD = M + 92, xP = W - M - 84, wD = xP - xD;
+  const filas = [];
+  if (v.armazonMaterial) filas.push({ c: 'Armazón', d: (v.armazonMaterial || '') + ' ' + (v.armazonDiseno || '') + ' · Modelo ' + (v.armazonModelo || '') + ' · Marca ' + (v.armazonMarca || '') + ' · Color ' + (v.armazonColor || ''), p: money(v.armazonPrecioDef) });
+  if (v.lenteMaterial) filas.push({ c: 'Lente', d: (v.lenteMaterial || '') + ' ' + (v.lenteDiseno || '') + ' · ' + (v.lenteTratamiento || '') + ' · Proveedor ' + (v.lenteProveedor || ''), p: money(v.lentePrecioDef) });
+  if (llevaLC(v)) filas.push({ c: 'Lente de contacto', d: (v.lcTipo || '') + ' · ' + (v.lcMarca || '') + ' · Caja de 6 lentes · Reemplazo mensual · BC ' + (v.lcCurvaBase || '') + ' · Ø ' + (v.lcDiametro || ''), p: money(v.lcPrecioDef) });
+  if (v.tipoVenta === 'rebisel') filas.push({ c: 'Rebisel', d: v.rebiselConcepto || '', p: money(v.armazonPrecioDef) });
+  if (v.tipoVenta === 'accesorio') filas.push({ c: 'Accesorio', d: v.accesorioDesc || '', p: money(v.armazonPrecioDef) });
+  filas.push({ c: 'Total parcial', d: '', p: money(v.precioDefTotal) });
+  filas.push({ c: 'Descuento', d: '', p: money(v.descuento) });
+  filas.push({ c: 'Neto / Total', d: '', p: money(v.totalManual), total: true });
+  filas.push({ c: 'Anticipo / A cuenta', d: '', p: money(v.aCuenta) });
+  filas.push({ c: 'Saldo', d: '', p: money(v.saldo) });
+  const tablaTop = y;
+  // Encabezado de la tabla.
+  const headH = 26;
+  if (dibujar) {
+    ctx.fillStyle = '#efe9fb';
+    ctx.fillRect(M, tablaTop, cw, headH);
+    texto(ctx, 'Concepto', xC + 8, tablaTop + 17, '700 13px ' + F, '#6f55b8', 'left', true);
+    texto(ctx, 'Detalle', xD + 8, tablaTop + 17, '700 13px ' + F, '#6f55b8', 'left', true);
+    texto(ctx, 'Precio', W - M - 8, tablaTop + 17, '700 13px ' + F, '#6f55b8', 'right', true);
+  }
+  y = tablaTop + headH;
+  filas.forEach(f => {
+    ctx.font = '13px ' + F;
+    const lineas = envolverTexto(ctx, f.d, wD - 16);
+    const n = Math.max(1, lineas.length);
+    const rowH = n * LH + 12;
+    if (dibujar) {
+      if (f.total) { ctx.fillStyle = '#efe9fb'; ctx.fillRect(M, y, cw, rowH); }
+      const fuente = f.total ? '700 13px ' + F : '13px ' + F;
+      texto(ctx, f.c, xC + 8, y + 19, fuente, INK, 'left', true);
+      lineas.forEach((ln, i) => texto(ctx, ln, xD + 8, y + 19 + i * LH, fuente, INK, 'left', true));
+      texto(ctx, f.p, W - M - 8, y + 19, fuente, INK, 'right', true);
+    }
+    y += rowH;
+  });
+  // Bordes de la tabla (exterior + separadores horizontales/verticales).
+  if (dibujar) {
+    ctx.strokeStyle = '#e3ddf2'; ctx.lineWidth = 1;
+    ctx.strokeRect(M, tablaTop, cw, y - tablaTop);
+    ctx.beginPath();
+    ctx.moveTo(M, tablaTop + headH); ctx.lineTo(W - M, tablaTop + headH);
+    ctx.moveTo(xD, tablaTop); ctx.lineTo(xD, y);
+    ctx.moveTo(xP, tablaTop); ctx.lineTo(xP, y);
+    ctx.stroke();
+  }
+  y += 10;
+  // Cantidad total en palabras.
+  y += parrafoMixto(ctx, [{ t: 'Cantidad total en palabras: ', b: true }, { t: numeroALetras(v.totalManual) + ' MXN.' }], M, y + 14, cw, F, 14, LH, dibujar, INK) + 8;
+  // Caja de garantías.
+  const g1 = parrafoMixto(ctx, [{ t: 'Garantías: ', b: true }, { t: GARANTIAS.adaptacion + ' · ' + GARANTIAS.armazon + ' · ' + GARANTIAS.tratamiento + '.' }], M + 10, 0, cw - 20, F, 13, 16, false, INK);
+  const g2 = parrafoMixto(ctx, [{ t: 'Próxima visita: ', b: true }, { t: prox.toLocaleDateString('es-MX') + ' (10 meses).' }], M + 10, 0, cw - 20, F, 13, 16, false, INK);
+  const cajaH = 10 + g1 + 4 + g2 + 10;
+  if (dibujar) {
+    trazoRedondeado(ctx, M, y, cw, cajaH, 8);
+    ctx.fillStyle = '#efe9fb'; ctx.fill();
+    parrafoMixto(ctx, [{ t: 'Garantías: ', b: true }, { t: GARANTIAS.adaptacion + ' · ' + GARANTIAS.armazon + ' · ' + GARANTIAS.tratamiento + '.' }], M + 10, y + 10 + 13, cw - 20, F, 13, 16, true, INK);
+    parrafoMixto(ctx, [{ t: 'Próxima visita: ', b: true }, { t: prox.toLocaleDateString('es-MX') + ' (10 meses).' }], M + 10, y + 10 + g1 + 4 + 13, cw - 20, F, 13, 16, true, INK);
+  }
+  y += cajaH + 10;
+  // Firmas.
+  const lineaY = y + 14;
+  if (dibujar) {
+    ctx.strokeStyle = INK; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(M, lineaY); ctx.lineTo(M + cw * 0.45, lineaY);
+    ctx.moveTo(W - M - cw * 0.45, lineaY); ctx.lineTo(W - M, lineaY);
+    ctx.stroke();
+    texto(ctx, 'Firma del cliente', M + cw * 0.225, lineaY + 16, '13px ' + F, INK, 'center', true);
+    texto(ctx, 'Boutique de Lentes Yael', W - M - cw * 0.225, lineaY + 16, '13px ' + F, INK, 'center', true);
+  }
+  y = lineaY + 16 + 6;
+  return { ancho: Math.round(W * k), alto: Math.round((y + M) * k) };
+}
+/* Pinta el TICKET 58 mm en un ctx 2D (refleja .doc-ticket del DOM:
+   monocromo, todo en negritas, logo circular de Yael en negro).
+   Ancho 58 mm ≈ 219 px a 96 dpi en 1x. Devuelve {ancho, alto} en px
+   de canvas (ya con la escala). Si dibujar=false solo mide. */
+function dibujarTicket(ctx, doc, logo, escala, dibujar) {
+  const k = (escala && escala > 0) ? escala : 2;
+  const v = (doc && doc.venta) || {}, c = (doc && doc.cliente) || {};
+  const F = 'monospace,ui-monospace,Menlo,Consolas,sans-serif';
+  const W = 219, M = 6, cw = W - 2 * M;
+  const t = totalesTicket(v);
+  const estado = Number(v.saldo) > 0 ? 'PENDIENTE' : 'LIQUIDADO';
+  let y = M;
+  const tl = (s, tam, align, salto) => {
+    const f = '700 ' + tam + 'px ' + F;
+    ctx.font = f; ctx.fillStyle = '#000'; ctx.textAlign = align || 'center'; ctx.textBaseline = 'alphabetic';
+    if (dibujar) ctx.fillText(s, align === 'right' ? W - M : align === 'center' ? W / 2 : M, y + tam);
+    y += salto || (tam + 4);
+  };
+  const separador = () => {
+    if (dibujar) {
+      ctx.save();
+      ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath(); ctx.moveTo(M, y + 3); ctx.lineTo(W - M, y + 3); ctx.stroke();
+      ctx.restore();
+    }
+    y += 7;
+  };
+  const filaConcepto = (desc, precio) => {
+    const f = '700 11px ' + F;
+    ctx.font = f;
+    const pw = ctx.measureText(precio).width + 8;
+    const lineas = envolverTexto(ctx, desc, cw - pw);
+    lineas.forEach((ln, i) => {
+      if (dibujar) {
+        ctx.font = f; ctx.fillStyle = '#000'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.fillText(ln, M, y + 11);
+        if (i === 0) { ctx.textAlign = 'right'; ctx.fillText(precio, W - M, y + 11); }
+      }
+      y += 15;
+    });
+    separador();
+  };
+  const filaTotal = (etiqueta, valor, tam) => {
+    const f = '700 ' + tam + 'px ' + F;
+    if (dibujar) {
+      ctx.font = f; ctx.fillStyle = '#000'; ctx.textBaseline = 'alphabetic';
+      ctx.textAlign = 'left'; ctx.fillText(etiqueta, M, y + tam);
+      ctx.textAlign = 'right'; ctx.fillText(valor, W - M, y + tam);
+    }
+    y += tam + 5;
+  };
+  // Logo circular de Yael en negro, centrado.
+  if (logo) {
+    const lw = 150, lh = lw * (logo.height / logo.width);
+    if (dibujar) ctx.drawImage(logo, (W - lw) / 2, y, lw, lh);
+    y += lh + 6;
+  }
+  tl(NEGOCIO.nombre, 13, 'center');
+  ctx.font = '700 11px ' + F;
+  envolverTexto(ctx, NEGOCIO.direccion, cw).forEach(ln => tl(ln, 11, 'center'));
+  tl('Tel. ' + NEGOCIO.telefonos, 11, 'center');
+  separador();
+  tl('COMPROBANTE DE VENTA', 13, 'center');
+  tl(v.folio || v.id || '', 12, 'center');
+  // Cliente.
+  tl('Cliente:', 11, 'left');
+  ctx.font = '700 11px ' + F;
+  envolverTexto(ctx, c.nombre || v.clienteNombre || '', cw).forEach(ln => tl(ln, 11, 'left'));
+  tl('ID: ' + (c.id || v.clienteId || ''), 11, 'left');
+  tl('Fecha: ' + fechaMX(v.fecha), 11, 'left');
+  separador();
+  // Conceptos (mismas filas que docTicketHTML).
+  if (v.armazonMaterial) filaConcepto('ARMAZÓN — ' + v.armazonMaterial + ' / ' + v.armazonDiseno, money(v.armazonPrecioDef));
+  if (v.lenteMaterial) filaConcepto('LENTE — ' + v.lenteMaterial + ' ' + v.lenteDiseno + ' ' + v.lenteTratamiento, money(v.lentePrecioDef));
+  if (llevaLC(v)) filaConcepto('LENTE DE CONTACTO — ' + v.lcTipo + ' ' + (v.lcMarca || '') + ' (caja de 6)', money(v.lcPrecioDef));
+  if (v.tipoVenta === 'rebisel') filaConcepto('REBISEL — ' + (v.rebiselConcepto || ''), money(v.armazonPrecioDef));
+  if (v.tipoVenta === 'accesorio') filaConcepto('ACCESORIO — ' + (v.accesorioDesc || ''), money(v.armazonPrecioDef));
+  separador();
+  // Totales.
+  if (t.tieneDef) filaTotal('Subtotal', money(t.precioDef), 11);
+  if (Number.isFinite(t.descuento)) filaTotal('Descuento', money(t.descuento), 11);
+  separador();
+  filaTotal('TOTAL', money(v.totalManual), 16);
+  separador();
+  filaTotal('Pagado', money(v.aCuenta), 11);
+  filaTotal('Saldo', money(v.saldo), 13);
+  filaTotal('Estado', estado, 11);
+  separador();
+  tl('Gracias por su preferencia', 11, 'center');
+  tl(NEGOCIO.nombre, 11, 'center');
+  return { ancho: Math.round(W * k), alto: Math.round((y + M) * k) };
+}
+async function generarImagenDocumento(doc, escala) {
+  // v2.3: pinta el documento directo en canvas 2D (sin SVG). La escala
+  // es 2x por defecto; compartirDoc reintenta a 1x si falla.
+  const k = (escala && escala > 0) ? escala : 2;
+  const esTicket = doc && doc.kind === 'ticket';
+  // v2.3.1: el comprobante usa DOS logos: el del banner con contorno
+  // blanco (logo-yael-contorno-blanco.png) y el circular para la marca
+  // de agua (logo-yael-circular.png). El ticket sigue con el circular
+  // monocromo y sin marca de agua.
+  const srcLogo = esTicket ? 'logo-yael-circular-mono.png' : 'logo-yael-contorno-blanco.png';
+  let logo = null, marca = null;
+  try { logo = await cargarImagen(srcLogo); }
+  catch (e) { logo = null; /* el documento se pinta sin logo */ }
+  if (!esTicket) {
+    try { marca = await cargarImagen('logo-yael-circular.png'); }
+    catch (e) { marca = null; /* el comprobante se pinta sin marca de agua */ }
+  }
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas no disponible.');
+  const pintar = esTicket ? dibujarTicket : dibujarComprobante;
+  // 1ª pasada: solo mide (sin pintar) para conocer el alto exacto.
+  let dims;
+  try { dims = pintar(ctx, doc, logo, k, false, marca, 0); }
+  catch (e) { throw new Error('al medir el documento: ' + e.message); }
+  if (!dims || !dims.ancho || !dims.alto) throw new Error('No se pudo medir el documento.');
+  canvas.width = dims.ancho;
+  canvas.height = dims.alto;
+  // Cambiar width/height resetea el contexto: se repone la escala
+  // (las coordenadas de los pintores son en px CSS).
+  ctx.scale(k, k);
+  try { pintar(ctx, doc, logo, k, true, marca, dims.alto / k); }
+  catch (e) { throw new Error('al dibujar el documento: ' + e.message); }
+  const png = await new Promise((res, rej) => canvas.toBlob(
+    b => (b ? res(b) : rej(new Error('No se pudo exportar el PNG.'))), 'image/png'));
+  return png;
+}
+
 async function compartirDoc() {
   const doc = state.currentDoc;
   if (!doc) return;
@@ -1777,15 +2030,15 @@ async function compartirDoc() {
   const folioLimpio = String(v.folio || doc.kind).replace(/[^A-Za-z0-9_-]/g, '') || doc.kind;
   const nombreArchivo = doc.kind + '-' + folioLimpio + '.png';
   try {
-    const nodo = document.querySelector('#docArea .doc');
-    if (!nodo) throw new Error('Documento no visible.');
+    if (!doc.venta) throw new Error('Documento no visible.');
     if (btn) { btn.disabled = true; btn.textContent = 'Generando imagen…'; }
-    // v2.1: se intenta a 2x y, si el dibujo falla en el celular, se
-    // reintenta a 1x (menos memoria). Si ambas fallan, el error real
-    // se muestra en pantalla (catch) para poder diagnosticarlo.
+    // v2.3: el documento se pinta directo en canvas 2D (sin SVG). Se
+    // intenta a 2x y, si el pintado falla en el celular, se reintenta
+    // a 1x (menos memoria). Si ambas fallan, el error real se muestra
+    // en pantalla (catch) para poder diagnosticarlo.
     let blob = null, ultimoError = null;
     for (const escala of [2, 1]) {
-      try { blob = await generarImagenDocumento(nodo, escala); break; }
+      try { blob = await generarImagenDocumento(doc, escala); break; }
       catch (e) { ultimoError = e; }
     }
     if (!blob) throw new Error('No se pudo generar la imagen: ' + (ultimoError && ultimoError.message ? ultimoError.message : 'error desconocido'));
