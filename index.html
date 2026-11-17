@@ -12,20 +12,12 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<header class="app-header">
-  <div class="brand">
-    <img src="logo-nexus.png" alt="OPTICST NEXUS" class="brand-logo">
-    <div>
-      <h1>OPTICST NEXUS</h1>
-      <p class="branch">Boutique de Lentes Yael · Sucursal Calle 4 · Calle 4 N° 342, Ciudad de México, 08100 · Tel. 5592405025 / 5611586976</p>
-    </div>
-  </div>
-  <div class="header-actions">
-    <span id="modeBadge" class="badge badge-demo" hidden>DEMO</span>
-    <button id="btnConfig" class="btn btn-ghost" type="button">Configuración</button>
-    <button id="btnHome" class="btn btn-ghost" type="button">Inicio</button>
-  </div>
-</header>
+<!-- Splash de arranque (v2.1 punto 8): solo al abrir la app ya configurada.
+     Se muestra brevemente y se puede saltar con un toque. -->
+<div id="splashStart" hidden>
+  <img src="marca-nexus.png" alt="OPTICST NEXUS">
+  <div class="splash-by">By Caremi Sistems Technology</div>
+</div>
 
 <main id="app">
   <!-- Pantalla de configuración inicial -->
@@ -36,6 +28,7 @@
       <div class="splash-tag">Tecnología que impulsa tu óptica</div>
     </div>
     <div class="card setup-card">
+      <button id="btnSetupBack" class="btn btn-ghost" type="button" hidden>← Volver al panel</button>
       <h2>Configuración inicial</h2>
       <p>Para usar la app, conecta tu backend de Google Apps Script. La URL y el token se guardan solo en este dispositivo (localStorage); nunca se envían a ningún otro lugar.</p>
       <form id="formSetup">
@@ -80,6 +73,12 @@
         <button class="dash-link" data-nav="catalogos" type="button">📚 Catálogos</button>
       </div>
       <p class="hint">Los 5 documentos se generan desde la ficha de cada venta o desde el Libro de visitas: historia clínica, orden de trabajo, ticket, comprobante de venta y lista de materiales.</p>
+    </div>
+    <!-- v2.1 punto 8: sin encabezado superior, Configuración y el aviso
+         DEMO viven aquí, en el panel principal. -->
+    <div class="home-utils">
+      <span id="modeBadge" class="badge badge-demo" hidden>DEMO</span>
+      <button id="btnConfig" class="btn btn-ghost" type="button">⚙️ Configuración</button>
     </div>
     <p id="homeError" class="error" hidden></p>
   </section>

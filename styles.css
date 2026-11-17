@@ -22,19 +22,23 @@ h2{font-size:1.35rem;margin:.4rem 0 .8rem}
 h3{margin:.2rem 0 .6rem}
 h4{margin:.4rem 0 .3rem}
 p{margin:.4rem 0}
-.app-header{background:#0A0F1F;color:#fff;padding:.8rem 1rem;display:flex;flex-wrap:wrap;gap:.8rem;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
-.app-header::after{content:'';position:absolute;left:0;right:0;bottom:0;height:3px;background:linear-gradient(90deg,#00E5FF,#2E7BFF,#A020FF)}
-.brand h1{letter-spacing:.12em}
-.brand{display:flex;gap:.7rem;align-items:center}
-.brand-logo{height:52px;width:auto;border-radius:10px;background:transparent;padding:0;flex:none}
 .splash{background:#000;border-radius:var(--radius);padding:1.2rem 1rem .9rem;text-align:center;margin-bottom:1rem}
 .splash-logo{max-width:260px;width:100%;height:auto}
 .splash-name{color:#fff;font-weight:800;letter-spacing:.35em;margin-top:.4rem}
 .splash-tag{color:#00E5FF;font-size:.9rem;margin-top:.15rem}
 .setup-logo{max-width:280px;width:100%;height:auto;margin-bottom:.5rem}
 .center{text-align:center}
-.branch{margin:0;font-size:.78rem;opacity:.92}
-.header-actions{display:flex;gap:.5rem;align-items:center}
+/* ---------- Splash de arranque (v2.1 punto 8) ----------
+   Pantalla completa negra con el logo Nexus COMO ES (marca-nexus.png)
+   y la leyenda "By Caremi Sistems Technology". Solo al abrir la app
+   ya configurada; se puede saltar con un toque. */
+#splashStart{position:fixed;inset:0;z-index:100;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;cursor:pointer;padding:1rem}
+#splashStart[hidden]{display:none}
+#splashStart img{width:min(340px,82vw);height:auto}
+#splashStart .splash-by{color:#b9b3c9;font-size:.92rem;letter-spacing:.06em;text-align:center}
+/* Fila de utilidades del panel principal (v2.1 punto 8): aquí viven
+   Configuración y el aviso DEMO tras quitar el encabezado superior. */
+.home-utils{display:flex;gap:.6rem;align-items:center;justify-content:flex-end;margin-top:.9rem}
 main{max-width:920px;margin:0 auto;padding:1rem 1rem 2rem}
 .view[hidden]{display:none}
 /* Encabezados de sección consistentes: título + barra degradada de marca */
@@ -211,8 +215,10 @@ code{background:var(--purple-light);padding:.1rem .3rem;border-radius:5px}
    contenido va por encima (z-index) para que no tape el texto. */
 .doc-orden{position:relative;overflow:hidden}
 .doc-orden>*:not(.doc-watermark){position:relative;z-index:1}
-.doc-watermark-luna{background-image:url(logo-luna.png)}
-.doc-head-luna img{height:56px;width:auto}
+/* v2.1: el logo de Luna en el encabezado no debe perderse: más grande
+   (84px) y en una pastilla blanca con borde para que el trazo fino
+   morado se vea firme sobre el fondo claro. */
+.doc-head-luna img{height:84px;width:auto;background:#fff;border-radius:8px;padding:4px;box-shadow:0 0 0 1px var(--line)}
 .orden-hoja-info{font-size:.9rem}
 .orden-label{min-height:2.4in}
 .doc-orden-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:.4rem;align-content:start}
@@ -260,6 +266,11 @@ code{background:var(--purple-light);padding:.1rem .3rem;border-radius:5px}
 .doc-ticket .tk-total td{font-size:16px;font-weight:800;border-top:1px dashed #000;border-bottom:1px dashed #000;padding:.3rem 0}
 .doc-ticket .tk-saldo td{font-weight:800;font-size:13px}
 .doc-ticket hr{border-top:1px dashed #000}
+/* v2.1: ticket 100% monocromo (solo negro/blanco/grises) y TODO en
+   negritas para que nada se pierda al imprimir en 58 mm. El logo es
+   logo-yael-circular-mono.png (circular, negro sobre transparente). */
+.doc-ticket{border-color:#000}
+.doc-ticket,.doc-ticket *{font-weight:700}
 
 /* Comprobante: media carta a color */
 /* Fase 3: el logo va directo sobre el degradado (sin cuadro blanco) y el
@@ -269,6 +280,13 @@ code{background:var(--purple-light);padding:.1rem .3rem;border-radius:5px}
 .doc-comprobante .banner-top .doc-title{color:#fff}
 .doc-comprobante .banner-logo{width:140px;height:auto;flex:none}
 .doc-watermark{position:absolute;inset:0;z-index:0;background-image:url(logo.png);background-repeat:no-repeat;background-position:center;background-size:min(420px,85%) auto;opacity:.08;pointer-events:none;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+/* v2.1: la marca de agua de la orden es el logo de Luna CON SUS COLORES
+   (morado + turquesa, nunca en gris). OJO: esta regla DEBE ir después de
+   .doc-watermark y con doble clase: antes .doc-watermark-luna (una sola
+   clase, línea ~214) perdía contra .doc-watermark por orden de aparición
+   y la orden mostraba el logo de Yael. Opacidad .14 para que el logo
+   Luna se reconozca claramente sin tapar el texto. */
+.doc-watermark.doc-watermark-luna{background-image:url(logo-luna.png);background-size:min(460px,88%) auto;opacity:.14}
 .doc-comprobante>*:not(.doc-watermark){position:relative;z-index:1}
 .doc-comprobante .garantias{font-size:.85rem;background:var(--purple-light);border-radius:8px;padding:.6rem .8rem}
 
@@ -280,7 +298,7 @@ code{background:var(--purple-light);padding:.1rem .3rem;border-radius:5px}
 html,body,.doc,.doc-comprobante .banner-top,.doc-watermark,.doc-comprobante .garantias,.doc th,.doc .total-row td{print-color-adjust:exact;-webkit-print-color-adjust:exact}
 @media print{
   body{background:#fff}
-  .app-header,.app-footer,.doc-toolbar,.wizard-nav,.btn,.bottom-nav{display:none!important}
+  .app-footer,.doc-toolbar,.wizard-nav,.btn,.bottom-nav{display:none!important}
   main{max-width:none;padding:0}
   .view{display:none!important}
   #view-doc{display:block!important}
@@ -292,6 +310,15 @@ html,body,.doc,.doc-comprobante .banner-top,.doc-watermark,.doc-comprobante .gar
   /* Cada hoja de órdenes es su propio documento: si alguna vez hay
      varias hojas en un mismo documento, cada una empieza en página nueva. */
   .doc-orden + .doc-orden{page-break-before:always;break-before:page}
+  /* v2.1: el comprobante debe caber en UNA página media carta (antes
+     las firmas caían solas a la 2ª). En print se compacta: menos
+     padding y márgenes, y las firmas/garantías nunca se parten. */
+  .doc-comprobante{padding:.6rem}
+  .doc-comprobante .banner-top{padding:.4rem .7rem}
+  .doc-comprobante p{margin:.3rem 0}
+  .doc-comprobante table td,.doc-comprobante table th{padding:.2rem .35rem}
+  .doc-comprobante .garantias{padding:.4rem .6rem;break-inside:avoid;page-break-inside:avoid}
+  .doc-comprobante .sig{margin-top:1rem;break-inside:avoid;page-break-inside:avoid}
   /* La marca de agua y el degradado del banner también se imprimen. */
   .doc-comprobante .banner-top,.doc-watermark,.doc-comprobante .garantias,.doc th,.doc .total-row td{print-color-adjust:exact;-webkit-print-color-adjust:exact}
 }

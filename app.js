@@ -432,6 +432,12 @@ function show(view) {
   VIEWS.forEach(v => { const el = $('#view-' + v); if (el) el.hidden = (v !== view); });
   window.scrollTo(0, 0);
   actualizarNav(view);
+  // v2.1 punto 8: en configuración, "Volver al panel" solo si la app
+  // ya está configurada (si nunca se configuró no hay panel al que volver).
+  if (view === 'setup') {
+    const bs = $('#btnSetupBack');
+    if (bs) bs.hidden = !(state.url || state.token || state.demo);
+  }
   if (view === 'pendientes') cargarPendientes();
   if (view === 'en-proceso') cargarEnProceso();
   if (view === 'ordenes') cargarOrdenes();
@@ -1486,14 +1492,16 @@ function partirEnHojas(items, porHoja) {
   for (let i = 0; i < (items || []).length; i += n) hojas.push(items.slice(i, i + n));
   return hojas;
 }
-/* Ticket 58 mm estilo ANTERIOR (Fase 4): monocromo, logo de Yael
-   centrado arriba sin deformar (logo.png es apaisado, no circular),
+/* Ticket 58 mm estilo ANTERIOR (Fase 4): monocromo, logo CIRCULAR de Yael
+   en negro (logo-yael-circular-mono.png, v2.1) centrado arriba,
    nombre del negocio, dirección y teléfonos de Calle 4,
    "COMPROBANTE DE VENTA" + folio, cliente + ID + fecha, conceptos,
    Subtotal (precios definidos), Descuento, TOTAL GRANDE en negrita,
    Pagado, Saldo en negrita, Estado y "Gracias por su preferencia".
-   Sigue con las clases .doc .doc-ticket para que el compartir como
-   imagen de la Fase 3 (generarImagenDocumento) lo siga serializando.
+   Todo el texto en negritas (v2.1, CSS .doc-ticket) para que no se
+   pierda al imprimir en la térmica de 58 mm. Sigue con las clases
+   .doc .doc-ticket para que el compartir como imagen de la Fase 3
+   (generarImagenDocumento) lo siga serializando.
    La graduación NO aparece en el ticket. */
 function docTicketHTML(d) {
   const v = d.venta || {}, c = d.cliente || {};
@@ -1515,7 +1523,7 @@ function docTicketHTML(d) {
     ? descNum : (tieneDef ? precioDef - Number(v.totalManual || 0) : NaN);
   const estado = Number(v.saldo) > 0 ? 'PENDIENTE' : 'LIQUIDADO';
   return '<div class="doc doc-ticket">' +
-    '<div class="tk-center"><img class="ticket-logo" src="logo.png" alt="Boutique de Lentes Yael"></div>' +
+    '<div class="tk-center"><img class="ticket-logo" src="logo-yael-circular-mono.png" alt="Boutique de Lentes Yael"></div>' +
     '<div class="tk-nombre">' + esc(NEGOCIO.nombre) + '</div>' +
     '<p class="tk-center">' + esc(NEGOCIO.direccion) + '<br>Tel. ' + esc(NEGOCIO.telefonos) + '</p><hr>' +
     '<p class="tk-titulo">COMPROBANTE DE VENTA</p>' +
@@ -1611,7 +1619,10 @@ const PAGE_SIZES = {
 };
 function aplicarTamanoPagina(kind) {
   const size = PAGE_SIZES[kind] || 'letter';
-  const margin = kind === 'ticket' ? '0' : '8mm';
+  // v2.1: margen más chico en comprobante/historia para que el
+  // comprobante quepa en una sola página media carta (antes las firmas
+  // caían a la 2ª con 8mm de margen).
+  const margin = kind === 'ticket' ? '0' : ((kind === 'comprobante' || kind === 'historia') ? '5mm' : '8mm');
   let st = document.getElementById('pageSizeStyle');
   if (!st) {
     st = document.createElement('style');
@@ -1633,16 +1644,39 @@ function imprimirDoc() {
    1) navigator.share con archivos -> 2) descarga del PNG y aviso ->
    3) si la imagen no se pudo generar, texto por share / wa.me (el
    comportamiento anterior; el botón nunca queda muerto). Cancelar el
-   menú de compartir no dispara ningún fallback. */
-function construirSvgDocumento(html, css, ancho, alto) {
+   menú de compartir no dispara ningún fallback.
+   v2.1: el CSS incrustado se limpia de url() externas (en algunos
+   Chrome de Android rompían el dibujo del SVG), se reintenta a 1x si
+   falla a 2x, hay timeout de 20 s, y si la imagen no se genera se
+   muestra el error real en pantalla antes de compartir el texto. */
+function construirSvgDocumento(html, css, ancho, alto, escala) {
   // Función pura (sin DOM): construye el SVG que incrusta el HTML del
   // documento. Se prueba en Node extrayéndola de este archivo.
+  // v2.1: la escala es parámetro (2x por defecto; si el dibujo a 2x
+  // falla en el celular se reintenta a 1x desde compartirDoc).
+  const k = (escala && escala > 0) ? escala : 2;
   const w = Math.max(1, Math.round(ancho || 0));
   const h = Math.max(1, Math.round(alto || 0));
-  return '<svg xmlns="http://www.w3.org/2000/svg" width="' + (w * 2) + '" height="' + (h * 2) + '" viewBox="0 0 ' + w + ' ' + h + '">' +
+  return '<svg xmlns="http://www.w3.org/2000/svg" width="' + (w * k) + '" height="' + (h * k) + '" viewBox="0 0 ' + w + ' ' + h + '">' +
     '<foreignObject x="0" y="0" width="100%" height="100%">' +
     '<div xmlns="http://www.w3.org/1999/xhtml"><style>' + css + '</style>' + html + '</div>' +
     '</foreignObject></svg>';
+}
+function limpiarCssParaSvg(css) {
+  // v2.1: quita del CSS incrustado en el SVG todas las referencias
+  // url(...) externas (logo.png, logo-luna.png, etc.). Un SVG cargado
+  // como imagen debe ser autocontenido: esas referencias no cargan y
+  // en algunos Chrome de Android hacen fallar el dibujo del documento
+  // (el botón se quedaba en "Generando imagen…" y caía al texto).
+  // Las imágenes <img> y la marca de agua ya van como data URL en
+  // línea (ver generarImagenDocumento), así que no se pierde nada.
+  // Solo se conservan los url(data:...) que ya son autocontenidos.
+  // (Se decide con función de reemplazo y no con lookahead, porque el
+  // cuantificador opcional de la comilla permitía saltárselo.)
+  return String(css || '').replace(/url\(\s*(['"]?)([^)]*?)\1\s*\)/gi, (m, q, inner) => {
+    const v = String(inner || '').trim();
+    return (/^data:/i.test(v)) ? m : 'none';
+  });
 }
 function imagenADataURL(src) {
   // fetch local + FileReader: la imagen queda incrustada como data URL
@@ -1657,20 +1691,29 @@ function imagenADataURL(src) {
     fr.readAsDataURL(blob);
   }));
 }
-async function generarImagenDocumento(nodo) {
-  const ancho = nodo.offsetWidth || nodo.getBoundingClientRect().width;
-  const alto = nodo.offsetHeight || nodo.getBoundingClientRect().height;
+async function generarImagenDocumento(nodo, escala) {
+  // v2.1: escala 2x por defecto; compartirDoc reintenta a 1x si falla.
+  // Los errores llevan la etapa ("al medir", "al dibujar", ...) para
+  // poder diagnosticar en el celular qué parte falla.
+  const k = (escala && escala > 0) ? escala : 2;
+  let ancho, alto;
+  try {
+    ancho = nodo.offsetWidth || nodo.getBoundingClientRect().width;
+    alto = nodo.offsetHeight || nodo.getBoundingClientRect().height;
+  } catch (e) { throw new Error('al medir el documento: ' + e.message); }
   if (!ancho || !alto) throw new Error('No se pudo medir el documento.');
   const clon = nodo.cloneNode(true);
   // Estilos: se incrustan los de styles.css (fetch local). Si el fetch
   // falla, se sigue con una base mínima; los estilos en línea del clon
   // se conservan. Las reglas @media print del archivo no aplican aquí
   // (el contexto es pantalla), así que no contaminan la imagen.
+  // v2.1: se limpian las url() externas del CSS (ver limpiarCssParaSvg).
   let css = '';
   try {
     const r = await fetch('styles.css');
     if (r.ok) css = await r.text();
   } catch (e) { css = ''; }
+  css = limpiarCssParaSvg(css);
   css += '\n.doc{color:#241f31;background:#fff;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;line-height:1.45;}';
   // Imágenes del documento (logo.png, etc.) como data URL. Si una no
   // carga, se quita solo esa imagen y se sigue con el resto.
@@ -1692,19 +1735,22 @@ async function generarImagenDocumento(nodo) {
       m.style.backgroundImage = 'url("' + url + '")';
     } catch (e) { /* sigue sin marca de agua */ }
   }));
-  const svg = construirSvgDocumento(clon.outerHTML, css, ancho, alto);
+  const svg = construirSvgDocumento(clon.outerHTML, css, ancho, alto, k);
   const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   try {
     const img = new Image();
     await new Promise((res, rej) => {
-      img.onload = res;
-      img.onerror = () => rej(new Error('No se pudo dibujar el documento.'));
+      // v2.1: timeout para que el botón nunca se quede colgado en
+      // "Generando imagen…" si el dibujo no responde.
+      const to = setTimeout(() => rej(new Error('Tiempo agotado al dibujar el documento (SVG).')), 20000);
+      img.onload = () => { clearTimeout(to); res(); };
+      img.onerror = () => { clearTimeout(to); rej(new Error('No se pudo dibujar el documento (SVG).')); };
       img.src = url;
     });
     const canvas = document.createElement('canvas');
-    canvas.width = Math.round(ancho * 2);
-    canvas.height = Math.round(alto * 2);
+    canvas.width = Math.round(ancho * k);
+    canvas.height = Math.round(alto * k);
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Canvas no disponible.');
     ctx.fillStyle = '#ffffff';
@@ -1734,7 +1780,15 @@ async function compartirDoc() {
     const nodo = document.querySelector('#docArea .doc');
     if (!nodo) throw new Error('Documento no visible.');
     if (btn) { btn.disabled = true; btn.textContent = 'Generando imagen…'; }
-    const blob = await generarImagenDocumento(nodo);
+    // v2.1: se intenta a 2x y, si el dibujo falla en el celular, se
+    // reintenta a 1x (menos memoria). Si ambas fallan, el error real
+    // se muestra en pantalla (catch) para poder diagnosticarlo.
+    let blob = null, ultimoError = null;
+    for (const escala of [2, 1]) {
+      try { blob = await generarImagenDocumento(nodo, escala); break; }
+      catch (e) { ultimoError = e; }
+    }
+    if (!blob) throw new Error('No se pudo generar la imagen: ' + (ultimoError && ultimoError.message ? ultimoError.message : 'error desconocido'));
     const archivo = new File([blob], nombreArchivo, { type: 'image/png' });
     if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
       try {
@@ -1742,7 +1796,7 @@ async function compartirDoc() {
         return;
       } catch (e) {
         if (e && e.name === 'AbortError') return; // el usuario canceló el menú
-        throw e;
+        throw new Error('No se pudo abrir el menú para compartir la imagen: ' + (e.message || e.name || e));
       }
     }
     // Fallback 1: el dispositivo no comparte archivos -> descargar el PNG.
@@ -1754,6 +1808,10 @@ async function compartirDoc() {
     showError('Tu dispositivo no permite compartir la imagen directamente: se descargó "' + nombreArchivo + '" para que la envíes por WhatsApp o la imprimas.');
   } catch (e) {
     if (e && e.name === 'AbortError') return;
+    // v2.1: el error real se muestra en pantalla (12 s) en vez de caer
+    // en silencio al texto: así en el siguiente test Alfredo puede
+    // decirnos qué dice el aviso y diagnosticamos la causa.
+    showError('No se pudo compartir la imagen: ' + e.message + ' Se comparte el texto.');
     // Fallback 2: la imagen no se pudo generar -> texto como antes.
     try {
       if (navigator.share) {
@@ -1795,16 +1853,43 @@ function saveConfig(url, token, demoFlag) {
   }
   loadConfig();
 }
+/* ---------- Splash de arranque (v2.1 punto 8) ----------
+   Al abrir la app ya configurada se muestra brevemente el logo Nexus
+   completo (marca-nexus.png) con "By Caremi Sistems Technology" y
+   luego pasa al panel. Con un toque se salta. Si la app no está
+   configurada no hay splash: va directo a la configuración inicial. */
+let splashTimer = null, splashInicio = 0;
+function mostrarSplashArranque() {
+  const s = $('#splashStart');
+  if (!s) return;
+  splashInicio = Date.now();
+  s.hidden = false;
+  if (splashTimer) clearTimeout(splashTimer);
+  splashTimer = setTimeout(ocultarSplash, 4000); // failsafe: nunca más de 4 s
+}
+async function esperarSplashMinimo() {
+  // El splash se ve al menos 1.5 s aunque el backend responda antes.
+  const falta = 1500 - (Date.now() - splashInicio);
+  if (splashInicio && falta > 0) await new Promise(res => setTimeout(res, falta));
+}
+function ocultarSplash() {
+  if (splashTimer) { clearTimeout(splashTimer); splashTimer = null; }
+  const s = $('#splashStart');
+  if (s) s.hidden = true;
+}
 async function entrarApp() {
   if (state.demo || (state.url && state.token)) {
     try {
       await api('ping');
     } catch (e) {
+      ocultarSplash();
       showError('No se pudo conectar con el backend: ' + e.message + ' Revisa la URL y el token en Configuración.');
       show('setup');
       return;
     }
     await loadCatalogs();
+    await esperarSplashMinimo();
+    ocultarSplash();
     show('home');
   } else {
     show('setup');
@@ -1826,7 +1911,12 @@ function init() {
   $('#btnEnterDemo').addEventListener('click', () => { saveConfig('', '', true); entrarApp(); });
   $('#setupDemo').addEventListener('change', ev => { if (ev.target.checked) { $('#setupUrl').required = false; $('#setupToken').required = false; } });
   $('#btnConfig').addEventListener('click', () => show('setup'));
-  $('#btnHome').addEventListener('click', goHome);
+  $('#btnSetupBack').addEventListener('click', goHome);
+  // v2.1 punto 8: splash de arranque solo si la app ya está configurada;
+  // con un toque se salta.
+  if (state.demo || (state.url && state.token)) mostrarSplashArranque();
+  const sp = $('#splashStart');
+  if (sp) sp.addEventListener('click', ocultarSplash);
   // Dashboard
   $$('#dashboardGrid [data-nav]').forEach(b => b.addEventListener('click', () => show(b.dataset.nav)));
   $$('[data-nav]').forEach(b => { if (!b.closest('#dashboardGrid')) b.addEventListener('click', () => show(b.dataset.nav)); });

@@ -1,5 +1,5 @@
 /* OPTICST NEXUS — Service Worker: cachea el app shell para uso instalable/offline básico */
-const CACHE_NAME = 'opticst-nexus-v2';
+const CACHE_NAME = 'opticst-nexus-v3';
 const APP_SHELL = [
   'index.html',
   'styles.css',
@@ -9,6 +9,7 @@ const APP_SHELL = [
   'logo-nexus.png',
   'marca-nexus.png',
   'logo-luna.png',
+  'logo-yael-circular-mono.png',
   'icon-192.png',
   'icon-512.png'
 ];
