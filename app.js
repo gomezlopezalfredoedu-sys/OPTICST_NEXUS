@@ -17,17 +17,40 @@ const NEGOCIO = {
 };
 const GARANTIAS = { adaptacion: '30 días de adaptación', armazon: '6 meses armazón', tratamiento: '6 meses tratamiento' };
 const PROXIMA_VISITA_MESES = 10;
+/* ---------- Fase 5: Laboratorio Óptico Luna (SOLO órdenes de trabajo) ----------
+   Yael es el operador principal para venta al cliente; Luna es el
+   operador de proceso, la entidad que elabora los lentes. Por eso SOLO
+   en las órdenes de trabajo sale Luna; todo lo demás (comprobante,
+   ticket, historia clínica, app) sigue con Yael / OPTICST NEXUS.
+   La dirección y los teléfonos son los mismos de Calle 4.
+   El logo de Luna AÚN NO lo ha pasado Alfredo: se referencia
+   `logo-luna.png` con onerror (si no existe, se oculta la imagen y
+   queda solo el nombre en texto, sin imagen rota). NO se añade a la
+   caché de sw.js: cache.addAll fallaría al instalar si no existe. */
+const LABORATORIO = {
+  nombre: 'Laboratorio Óptico Luna',
+  direccion: NEGOCIO.direccion,
+  telefonos: NEGOCIO.telefonos,
+  logo: 'logo-luna.png'
+};
+const LS_ORDENES_SEL = 'bly_ordenes_sel'; // selección de trabajos para armar hojas de órdenes
+const ETIQUETAS_POR_HOJA = 9;             // rejilla 3×3 en carta
+const SIN_PROVEEDOR = 'Sin proveedor';    // grupo aparte, nunca se descarta en silencio
 
 const state = {
   demo: false,
   url: '',
   token: '',
   catalogs: null,
-  wizard: { step: 1, cliente: null, historia: null, tipoVenta: 'lentes_completos', conArmazonLC: false },
+  wizard: { step: 1, cliente: null, historia: null, tipoVenta: 'lentes_completos', conArmazonLC: false, llevaLC: false },
   currentVentaId: null,
   currentDoc: null,       // {kind, venta}
   currentClienteId: null,
+  abonoVentaId: null,     // venta elegida en la vista rápida de abono
+  abonoSaldo: 0,
   pendientesSel: new Set(),
+  ordenesTrabajos: [],       // trabajos cargados en la vista de órdenes (En proceso + Pendientes)
+  ordenesSel: new Set(),     // ventaIds seleccionados para armar hojas (persiste en localStorage)
   materialesCache: null,
   corteCache: null
 };
@@ -180,7 +203,7 @@ async function api(action, params) {
 
 function demoApi(action, p) {
   switch (action) {
-    case 'ping': return Promise.resolve({ version: '1.0.0-demo' });
+    case 'ping': return Promise.resolve({ version: '2.0.0-demo' });
     case 'getCatalogos': return Promise.resolve(demoCatalogs());
     case 'buscarCliente': {
       const q = (p.q || '').toLowerCase();
@@ -310,6 +333,17 @@ function demoApi(action, p) {
       const h = demo.historias.filter(x => x.clienteId === v.clienteId).slice(-1)[0] || null;
       return Promise.resolve({ venta: v, cliente: c, historia: h, pagos: v.pagos || [] });
     }
+    case 'getVentas': {
+      // Igual que el backend (normalizar en Code.gs): sin acentos ni mayúsculas.
+      const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const q = norm(p.q || '');
+      const lista = demo.ventas.slice().sort((a, b) =>
+        String(b.fecha || '').localeCompare(String(a.fecha || '')) ||
+        String(b.folio || '').localeCompare(String(a.folio || '')));
+      const filtradas = q ? lista.filter(v =>
+        norm(v.folio).includes(q) || norm(v.clienteNombre).includes(q)) : lista;
+      return Promise.resolve(filtradas.slice(0, 50));
+    }
     default: return Promise.reject(new Error('Acción no soportada en demo: ' + action));
   }
 }
@@ -360,6 +394,7 @@ function fillCatalogSelects() {
   fillSelect($('#pMetodo'), lista('Metodo_Pago'), '—');
   fillSelect($('#gastoMetodo'), lista('Metodo_Pago'), '—');
   fillSelect($('#abonoMetodo'), lista('Metodo_Pago'), '—');
+  fillSelect($('#abMetodo'), lista('Metodo_Pago'), '—');
   const costos = (state.catalogs && state.catalogs.costosProduccion) || [];
   fillSelect($('#pCostoProd'), costos.map(c => (c.servicio || c.Servicio) + ' — $' + (c.precio || c.Precio)), '—');
   const precios = (state.catalogs && state.catalogs.preciosLentes) || [];
@@ -392,17 +427,31 @@ async function loadCatalogs() {
 }
 
 /* ---------- Navegación ---------- */
-const VIEWS = ['setup', 'home', 'nueva-venta', 'buscar-cliente', 'libro-visitas', 'pendientes', 'en-proceso', 'resumen', 'lista-materiales', 'catalogos', 'venta', 'doc'];
+const VIEWS = ['setup', 'home', 'nueva-venta', 'buscar-cliente', 'libro-visitas', 'pendientes', 'en-proceso', 'ventas', 'resumen', 'lista-materiales', 'catalogos', 'venta', 'doc', 'abono', 'ordenes'];
 function show(view) {
   VIEWS.forEach(v => { const el = $('#view-' + v); if (el) el.hidden = (v !== view); });
   window.scrollTo(0, 0);
+  actualizarNav(view);
   if (view === 'pendientes') cargarPendientes();
   if (view === 'en-proceso') cargarEnProceso();
+  if (view === 'ordenes') cargarOrdenes();
+  if (view === 'ventas') cargarVentas();
   if (view === 'resumen') { $('#gastoFecha').value = hoyISO(); $('#corteFecha').value = hoyISO(); cargarResumen(); cargarFondo(); }
   if (view === 'lista-materiales') cargarMateriales();
   if (view === 'catalogos') cargarCatalogosView();
 }
 function goHome() { show('home'); }
+
+/* ---------- Menú inferior: estado activo + ocultar en configuración ---------- */
+function actualizarNav(view) {
+  const nav = $('#bottomNav');
+  if (!nav) return;
+  nav.hidden = (view === 'setup');
+  // El ítem activo es el que tiene data-nav igual a la vista actual;
+  // las vistas sin ítem propio (buscar-cliente, libro-visitas, abono,
+  // venta, doc, catálogos, ordenes) dejan el menú sin activo.
+  $$('.nav-item, .nav-fab', nav).forEach(b => b.classList.toggle('active', b.dataset.nav === view));
+}
 
 /* ---------- Asistente de nueva venta ---------- */
 function setStep(n) {
@@ -489,17 +538,40 @@ function guardarHistoriaLocal() {
 }
 function aplicarTipoVenta() {
   const tipo = (document.querySelector('input[name="tipoVenta"]:checked') || {}).value || 'lentes_completos';
+  // El interruptor de LC solo "nace" con su valor por defecto cuando
+  // cambia el tipo de venta; si aplicarTipoVenta se vuelve a llamar con
+  // el mismo tipo (p. ej. al pulsar "Siguiente" en el paso 3), se
+  // conserva lo que Alfredo ya eligió en el interruptor.
+  const cambioTipo = tipo !== state.wizard.tipoVenta;
   state.wizard.tipoVenta = tipo;
   state.wizard.conArmazonLC = $('#lcConArmazon').checked;
+  if (cambioTipo) {
+    // Lente de contacto nace activado; en lentes completos nace apagado
+    // (promoción: Alfredo lo enciende si vende LC con el armazón);
+    // en rebisel / accesorio queda apagado y oculto.
+    state.wizard.llevaLC = (tipo === 'lente_contacto');
+    const sw = $('#lcSwitch');
+    if (sw) sw.checked = state.wizard.llevaLC;
+  }
+  const llevaLC = !!state.wizard.llevaLC;
+  $('#lcSwitchWrap').hidden = !(tipo === 'lentes_completos' || tipo === 'lente_contacto');
   $('#fsArmazon').hidden = !(tipo === 'lentes_completos' || tipo === 'rebisel' || (tipo === 'lente_contacto' && state.wizard.conArmazonLC));
   $('#lcConArmazonWrap').hidden = (tipo !== 'lente_contacto');
   $('#fsRebisel').hidden = (tipo !== 'rebisel');
   $('#fsAccesorio').hidden = (tipo !== 'accesorio');
-  $('#fsLC').hidden = (tipo !== 'lente_contacto');
+  $('#fsLC').hidden = !llevaLC;
   const llevaLente = (tipo === 'lentes_completos' || tipo === 'rebisel');
   $('#fsLente').hidden = !llevaLente;
   $('#lenteSkipMsg').hidden = llevaLente;
   if (tipo === 'lente_contacto') actualizarMarcasLC();
+}
+/* Interruptor "Lente de contacto" (paso 3, Fase 4): controla todo lo
+   de LC — solo con el interruptor activado aparecen los campos de LC y
+   solo entonces sus datos van en el payload y en los documentos. */
+function aplicarInterruptorLC() {
+  state.wizard.llevaLC = $('#lcSwitch').checked;
+  $('#fsLC').hidden = !state.wizard.llevaLC;
+  if (state.wizard.llevaLC) actualizarMarcasLC();
 }
 function actualizarMarcasLC() {
   const tipo = $('#lcTipo').value;
@@ -516,13 +588,17 @@ function actualizarMarcasLC() {
 }
 function precioDefinidoTotal() {
   const tipo = state.wizard.tipoVenta;
-  let arm = 0, len = 0;
+  let arm = 0, len = 0, lc = 0;
   if (tipo === 'lentes_completos' || tipo === 'rebisel' || (tipo === 'lente_contacto' && state.wizard.conArmazonLC)) arm = Number($('#armPrecio').value || 0);
   if (tipo === 'lentes_completos' || tipo === 'rebisel') len = Number($('#lentePrecio').value || 0);
+  // Lente de contacto: en venta de LC su precio va en `len` (es el
+  // "lente / LC" del paso 5); en lentes completos con el interruptor
+  // activado se suma aparte al total definido.
   if (tipo === 'lente_contacto') len = Number($('#lcPrecio').value || 0);
+  else if (state.wizard.llevaLC) lc = Number($('#lcPrecio').value || 0);
   if (tipo === 'rebisel') { arm = Number($('#rebiselPrecio').value || 0); len = 0; }
   if (tipo === 'accesorio') { arm = Number($('#accPrecio').value || 0); len = 0; }
-  return { arm, len, total: arm + len };
+  return { arm, len, lc, total: arm + len + lc };
 }
 function actualizarPrecios() {
   const d = precioDefinidoTotal();
@@ -539,9 +615,16 @@ function renderConfirmacion() {
   const d = precioDefinidoTotal();
   const manual = Number($('#pTotalManual').value || 0);
   const tipoTxt = { lentes_completos: 'Lentes completos (armazón + lente)', rebisel: 'Rebisel', accesorio: 'Accesorio', lente_contacto: 'Lente de contacto' }[tipo];
-  $('#confirmResumen').innerHTML =
+  // Fase 4: si la venta lleva lente y la graduación está vacía (el
+  // wizard permite avanzar solo con el motivo de consulta), avisar
+  // aquí en vez de descubrirlo después en la orden de trabajo.
+  const llevaLente = tipo !== 'accesorio';
+  const avisoGrad = (llevaLente && historiaSinGraduacion(h))
+    ? '<p class="error"><strong>⚠ Esta venta lleva lente pero la graduación está vacía.</strong> La orden de trabajo saldrá con el aviso "Graduación no registrada". Si ya tienes la graduación, vuelve al paso 2 y captúrala en la historia clínica.</p>' : '';
+  $('#confirmResumen').innerHTML = avisoGrad +
     '<table><tr><th>Cliente</th><td>' + esc(c ? c.nombre : '—') + '</td></tr>' +
     '<tr><th>Tipo de venta</th><td>' + esc(tipoTxt) + '</td></tr>' +
+    (state.wizard.llevaLC ? '<tr><th>Lente de contacto</th><td>' + esc($('#lcTipo').value) + ' · ' + esc($('#lcMarca').value || '') + ' (caja de 6) · ' + money($('#lcPrecio').value || 0) + '</td></tr>' : '') +
     '<tr><th>Graduación OD</th><td>Esf ' + esc(h.gradEsfOD || '—') + ' · Cil ' + esc(h.gradCilOD || '—') + ' · Eje ' + esc(h.gradEjeOD || '—') + '</td></tr>' +
     '<tr><th>Graduación OI</th><td>Esf ' + esc(h.gradEsfOI || '—') + ' · Cil ' + esc(h.gradCilOI || '—') + ' · Eje ' + esc(h.gradEjeOI || '—') + '</td></tr>' +
     '<tr><th>Add / DNP</th><td>' + esc(h.gradAdd || '—') + ' / ' + esc(h.dnp || '—') + '</td></tr>' +
@@ -565,6 +648,11 @@ async function guardarVenta() {
   const totalManual = Number($('#pTotalManual').value || 0);
   if (!(totalManual > 0)) { showError('Captura el total manual de la venta.', $('#wizardError')); return; }
   const aCuenta = Number($('#pACuenta').value || 0);
+  // Fase 4: los datos de LC solo van en el payload si el interruptor
+  // está activado. Antes se mandaba siempre lcTipo ('Esférico' por
+  // defecto) y por eso ventas sin LC quedaban guardadas con LC_Tipo
+  // 'Esférico' y LC_Precio_Def 0 (VTA-0001).
+  const llevaLC = !!state.wizard.llevaLC;
   const payload = {
     clienteId: c.id, clienteNombre: c.nombre, telefono: c.telefono || '',
     tipoVenta: tipo,
@@ -574,8 +662,10 @@ async function guardarVenta() {
     lenteMaterial: $('#lenteMaterial').value, lenteDiseno: $('#lenteDiseno').value,
     lenteTratamiento: $('#lenteTratamiento').value + ($('#filtroTonoWrap').hidden ? '' : ' filtro tono ' + $('#filtroTono').value),
     lenteProveedor: $('#lenteProveedor').value, lentePrecioDef: d.len,
-    lcTipo: $('#lcTipo').value, lcMarca: $('#lcMarca').value, lcCurvaBase: $('#lcCurvaBase').value.trim(),
-    lcDiametro: $('#lcDiametro').value.trim(), lcPrecioDef: tipo === 'lente_contacto' ? d.len : '',
+    lcTipo: llevaLC ? $('#lcTipo').value : '', lcMarca: llevaLC ? $('#lcMarca').value : '',
+    lcCurvaBase: llevaLC ? $('#lcCurvaBase').value.trim() : '',
+    lcDiametro: llevaLC ? $('#lcDiametro').value.trim() : '',
+    lcPrecioDef: llevaLC ? Number($('#lcPrecio').value || 0) : '',
     rebiselConcepto: $('#rebiselConcepto').value, accesorioDesc: $('#accDesc').value,
     precioDefTotal: d.total, totalManual, descuento: d.total - totalManual,
     costoFinalInversion: Number($('#pCostoInversion').value || 0),
@@ -620,9 +710,56 @@ async function buscarClientes(q, boxEl, onPick) {
     });
   } catch (e) { showError('Error al buscar: ' + e.message); }
 }
+/* ---------- Qué compró / cuánto pagó / cómo lo pagó (Fase 2) ----------
+   Se usa en la vista Ventas, en la ficha del cliente y en el Libro de
+   visitas. Los métodos de pago salen del arreglo `pagos` de la venta
+   (lo traen getVentas y getCliente); si la venta no trae `pagos`, la
+   línea "Cómo:" simplemente no se muestra (nunca se inventa). */
+const TIPOS_VENTA = { lentes_completos: 'Lentes completos', rebisel: 'Rebisel', accesorio: 'Accesorio', lente_contacto: 'Lente de contacto' };
+function tipoVentaTexto(t) { return TIPOS_VENTA[t] || t || ''; }
+function queComproHTML(v) {
+  const partes = [];
+  const arm = [v.armazonModelo, v.armazonMarca, v.armazonMaterial, v.armazonDiseno].filter(Boolean).join(' · ');
+  if (arm) partes.push('Armazón: ' + arm + (v.armazonColor ? ' · color ' + v.armazonColor : ''));
+  const len = [v.lenteMaterial, v.lenteDiseno, v.lenteTratamiento].filter(Boolean).join(' · ');
+  if (len) partes.push('Lente: ' + len + (v.lenteProveedor ? ' · Prov. ' + v.lenteProveedor : ''));
+  if (llevaLC(v)) partes.push('LC: ' + [v.lcTipo, v.lcMarca].filter(Boolean).join(' · ') + ' (caja de 6)');
+  if (v.tipoVenta === 'rebisel' && v.rebiselConcepto) partes.push('Rebisel: ' + v.rebiselConcepto);
+  if (v.tipoVenta === 'accesorio' && v.accesorioDesc) partes.push('Accesorio: ' + v.accesorioDesc);
+  if (!partes.length) return '';
+  return '<small><strong>Compró:</strong> ' + esc(partes.join(' · ')) + '</small>';
+}
+function metodosDePago(v) {
+  const vistos = [];
+  (v.pagos || []).forEach(p => {
+    const m = p.metodo || '';
+    if (m && vistos.indexOf(m) === -1) vistos.push(m);
+  });
+  return vistos;
+}
+function metodosChipsHTML(v) {
+  const metodos = metodosDePago(v);
+  if (!metodos.length) return '';
+  return '<small><strong>Cómo:</strong> ' + metodos.map(m => '<span class="chip chip-metodo">' + esc(m) + '</span>').join(' ') + '</small>';
+}
+function estadoChipHTML(estado) {
+  const e = String(estado || '');
+  if (!e) return '';
+  const cerrado = /liquid|entreg/i.test(e);
+  return '<span class="chip ' + (cerrado ? 'chip-estado-ok' : 'chip-estado-pend') + '">' + esc(e) + '</span>';
+}
+function pagoLineaHTML(p) {
+  return '<p><small>' + fechaMX(p.fecha) + ' · ' + money(p.monto) + ' · ' + esc(p.concepto || '') + '</small>' +
+    (p.metodo ? ' <span class="chip chip-metodo">' + esc(p.metodo) + '</span>' : '') + '</p>';
+}
 function ventaResumenHTML(v) {
-  return '<div class="list-item"><div class="row"><strong>' + esc(v.folio || v.id) + '</strong><span>' + fechaMX(v.fecha) + '</span><span>' + money(v.totalManual) + '</span><span>Saldo: ' + money(v.saldo) + '</span><span>' + esc(v.estado || '') + '</span></div>' +
-    '<small>' + esc(v.tipoVenta || '') + (v.armazonModelo ? ' · ' + esc(v.armazonModelo) : '') + (v.lenteMaterial ? ' · ' + esc(v.lenteMaterial) : '') + '</small>' +
+  return '<div class="list-item venta-card">' +
+    '<div class="row venta-head"><strong>' + esc(v.folio || v.id) + '</strong>' +
+    (v.clienteNombre ? '<span>' + esc(v.clienteNombre) + '</span>' : '') +
+    '<span>' + fechaMX(v.fecha) + '</span>' + estadoChipHTML(v.estado) + '</div>' +
+    '<div class="venta-lineas">' + (queComproHTML(v) || '<small>' + esc(tipoVentaTexto(v.tipoVenta)) + '</small>') + '</div>' +
+    '<div class="venta-lineas"><small><strong>Pagó:</strong> ' + money(v.aCuenta) + ' de ' + money(v.totalManual) + ' · <strong>Saldo:</strong> ' + money(v.saldo) + '</small>' +
+    metodosChipsHTML(v) + '</div>' +
     '<div class="row"><button class="btn btn-secondary" type="button" data-open-venta="' + esc(v.id) + '">Ver ficha</button>' +
     '<button class="btn btn-secondary" type="button" data-doc-venta="' + esc(v.id) + '" data-doc="ticket">Ticket</button>' +
     '<button class="btn btn-secondary" type="button" data-doc-venta="' + esc(v.id) + '" data-doc="comprobante">Comprobante</button></div></div>';
@@ -674,7 +811,9 @@ async function cargarPendientes() {
       d.className = 'list-item';
       const tel = (v.telefono || t.telefono || '').replace(/\D/g, '');
       d.innerHTML = '<label class="check"><input type="checkbox" data-pend="' + esc(t.ventaId) + '"> <strong>' + esc(v.folio || t.ventaId) + '</strong> · ' + esc(v.clienteNombre || t.clienteNombre || '') + '</label>' +
-        '<small>' + esc(v.tipoVenta || '') + ' · Total ' + money(v.totalManual) + ' · Saldo ' + money(v.saldo) + ' · ' + esc(v.estado || t.estado || '') + '</small>' +
+        '<div class="venta-lineas">' + (queComproHTML(v) || '<small>' + esc(tipoVentaTexto(v.tipoVenta)) + '</small>') + '</div>' +
+        '<div class="venta-lineas"><small>Total ' + money(v.totalManual) + ' · Pagado ' + money(v.aCuenta) + ' · Saldo ' + money(v.saldo) + '</small>' + metodosChipsHTML(v) + '</div>' +
+        '<div class="venta-lineas"><small>Estado: ' + esc(v.estado || t.estado || '') + '</small></div>' +
         '<div class="row">' +
         (tel ? '<a class="btn btn-secondary" href="https://wa.me/52' + tel + '?text=' + encodeURIComponent('Hola, le avisamos de Boutique de Lentes Yael (Calle 4) que su trabajo ' + (v.folio || '') + ' ya está listo para recoger. ¡Gracias por su preferencia!') + '" target="_blank" rel="noopener">Avisar por WhatsApp</a>' : '<span class="hint">Sin teléfono para avisar.</span>') +
         '<button class="btn btn-secondary" type="button" data-open-venta="' + esc(t.ventaId) + '">Ver ficha</button></div>';
@@ -704,7 +843,8 @@ async function cargarEnProceso() {
       const d = document.createElement('div');
       d.className = 'list-item';
       d.innerHTML = '<strong>' + esc(v.folio || t.ventaId) + '</strong> · ' + esc(v.clienteNombre || t.clienteNombre || '') +
-        '<small>' + esc(v.tipoVenta || '') + ' · ' + esc(v.lenteMaterial || v.lcTipo || '') + ' ' + esc(v.lenteDiseno || '') + ' · ' + esc(v.armazonMaterial || '') + ' ' + esc(v.armazonDiseno || '') + '</small>' +
+        '<div class="venta-lineas">' + (queComproHTML(v) || '<small>' + esc(tipoVentaTexto(v.tipoVenta)) + '</small>') + '</div>' +
+        '<div class="venta-lineas"><small>Total ' + money(v.totalManual) + ' · Pagado ' + money(v.aCuenta) + ' · Saldo ' + money(v.saldo) + '</small>' + metodosChipsHTML(v) + '</div>' +
         '<div class="row"><button class="btn btn-primary" type="button" data-a-listo="' + esc(t.ventaId) + '">Pasar a pendiente de entrega</button>' +
         '<button class="btn btn-secondary" type="button" data-open-venta="' + esc(t.ventaId) + '">Ver ficha</button></div>';
       box.appendChild(d);
@@ -715,6 +855,174 @@ async function cargarEnProceso() {
     });
     wireVentaButtons(box);
   } catch (e) { box.innerHTML = ''; showError('No se pudieron cargar los trabajos en proceso: ' + e.message); }
+}
+
+/* ---------- Órdenes de trabajo (Fase 5): acumular etiquetas por proveedor ----------
+   Vista "Órdenes de trabajo": Alfredo selecciona trabajos de En proceso
+   y Pendientes con checkboxes para armar la hoja. La selección persiste
+   en localStorage (LS_ORDENES_SEL) mientras arma la hoja y se limpia
+   con el botón "Limpiar selección". Cada trabajo seleccionado aparece
+   UNA vez. Los trabajos se agrupan por proveedor de cristales
+   (lenteProveedor: Mia, H2O, Lensbest, INFONDI); sin proveedor van en
+   su propio grupo "Sin proveedor", nunca se descartan. Cada grupo
+   muestra su contador y un botón "Ver / imprimir hoja" por hoja (hasta
+   9 etiquetas, 3×3, formato carta; si un proveedor tiene más de 9, se
+   parte en hojas adicionales de 9: "Hoja 1 de 2", etc.). La hoja acepta
+   de 1 a 9 etiquetas: se puede imprimir aunque no sean 9.
+   La graduación de cada trabajo se trae con getVenta al armar la hoja
+   (la respuesta trae `historia` con la graduación: la misma fuente que
+   usa graduacionDe en Fase 4). Sin Code.gs nuevo: getEnProceso y
+   getPendientes ya devuelven la venta anidada con lenteProveedor. */
+function guardarOrdenesSel() {
+  try { localStorage.setItem(LS_ORDENES_SEL, JSON.stringify(Array.from(state.ordenesSel))); }
+  catch (e) { /* localStorage no disponible: la selección vive solo en memoria */ }
+}
+function actualizarOrdenesContador() {
+  const el = $('#ordenesSelCount');
+  if (el) el.textContent = String(state.ordenesSel.size);
+  const msg = $('#ordenesMsg');
+  if (msg) msg.textContent = state.ordenesSel.size
+    ? state.ordenesSel.size + ' trabajo' + (state.ordenesSel.size === 1 ? '' : 's') + ' seleccionado' + (state.ordenesSel.size === 1 ? '' : 's') + '. Cada uno aparece una sola vez en su hoja por proveedor.'
+    : 'Selecciona trabajos con el check; cada trabajo aparece una sola vez en la hoja.';
+}
+function actualizarOrdenesGrupos() {
+  const box = $('#ordenesGrupos');
+  if (!box) return;
+  const trabajos = (state.ordenesTrabajos || []).filter(t => state.ordenesSel.has(t.ventaId));
+  // Trabajos seleccionados que ya no están en En proceso ni en
+  // Pendientes (se entregaron o cambiaron de estado): no aparecen en
+  // las hojas y se avisa, no se pierden en silencio.
+  const cargados = new Set((state.ordenesTrabajos || []).map(t => t.ventaId));
+  const huerfanos = Array.from(state.ordenesSel).filter(id => !cargados.has(id));
+  if (!trabajos.length) {
+    box.innerHTML = '<p class="hint">Aún no hay trabajos seleccionados.</p>' +
+      (huerfanos.length ? '<p class="hint">⚠ ' + huerfanos.length + ' trabajo' + (huerfanos.length === 1 ? '' : 's') + ' seleccionado' + (huerfanos.length === 1 ? '' : 's') + ' ya no ' + (huerfanos.length === 1 ? 'está' : 'están') + ' en proceso ni pendiente (se entregó o cambió de estado).</p>' : '');
+    return;
+  }
+  const grupos = agruparOrdenesPorProveedor(trabajos);
+  box.innerHTML = '';
+  if (huerfanos.length) {
+    const p = document.createElement('p');
+    p.className = 'hint';
+    p.textContent = '⚠ ' + huerfanos.length + ' trabajo' + (huerfanos.length === 1 ? '' : 's') + ' seleccionado' + (huerfanos.length === 1 ? '' : 's') + ' ya no ' + (huerfanos.length === 1 ? 'está' : 'están') + ' en proceso ni pendiente y no aparece en las hojas.';
+    box.appendChild(p);
+  }
+  grupos.forEach(g => {
+    const hojas = partirEnHojas(g.trabajos, ETIQUETAS_POR_HOJA);
+    const d = document.createElement('div');
+    d.className = 'list-item orden-grupo' + (g.proveedor === SIN_PROVEEDOR ? ' orden-grupo-sin-prov' : '');
+    d.innerHTML = '<strong>' + esc(g.proveedor) + '</strong> <span class="chip">' + g.trabajos.length + ' trabajo' + (g.trabajos.length === 1 ? '' : 's') + '</span> <span class="chip">' + hojas.length + ' hoja' + (hojas.length === 1 ? '' : 's') + ' de hasta 9</span>' +
+      (g.proveedor === SIN_PROVEEDOR ? '<small><strong>⚠ Estos trabajos no tienen proveedor registrado:</strong> no se descartan, van en su propia hoja para que los revises.</small>' : '') +
+      '<div class="row orden-grupo-btns"></div>';
+    const btns = d.querySelector('.orden-grupo-btns');
+    hojas.forEach((hoja, i) => {
+      const b = document.createElement('button');
+      b.className = 'btn btn-secondary'; b.type = 'button';
+      b.textContent = 'Ver / imprimir hoja' + (hojas.length > 1 ? ' ' + (i + 1) + ' de ' + hojas.length : '') + ' (' + hoja.length + ' etiqueta' + (hoja.length === 1 ? '' : 's') + ')';
+      b.onclick = () => abrirHojaOrdenes(g.proveedor, hoja, i + 1, hojas.length);
+      btns.appendChild(b);
+    });
+    box.appendChild(d);
+  });
+}
+async function cargarOrdenes() {
+  const box = $('#ordenesList');
+  const gruposBox = $('#ordenesGrupos');
+  box.innerHTML = '<p class="hint">Cargando…</p>';
+  gruposBox.innerHTML = '';
+  try {
+    const [enProceso, pendientes] = await Promise.all([api('getEnProceso'), api('getPendientes')]);
+    const trabajos = (enProceso || []).concat(pendientes || []);
+    const vistos = new Set();
+    state.ordenesTrabajos = trabajos.filter(t => {
+      if (vistos.has(t.ventaId)) return false;
+      vistos.add(t.ventaId);
+      return true;
+    });
+    if (!state.ordenesTrabajos.length) {
+      box.innerHTML = '<p class="hint">No hay trabajos en proceso ni pendientes.</p>';
+      actualizarOrdenesGrupos();
+      actualizarOrdenesContador();
+      return;
+    }
+    box.innerHTML = '';
+    state.ordenesTrabajos.forEach(t => {
+      const v = t.venta || {};
+      const d = document.createElement('div');
+      d.className = 'list-item';
+      const prov = (v.lenteProveedor && String(v.lenteProveedor).trim()) || SIN_PROVEEDOR;
+      const sel = state.ordenesSel.has(t.ventaId);
+      d.innerHTML = '<label class="check"><input type="checkbox" data-orden="' + esc(t.ventaId) + '"' + (sel ? ' checked' : '') + '> <strong>' + esc(v.folio || t.ventaId) + '</strong> · ' + esc(v.clienteNombre || t.clienteNombre || '') + '</label>' +
+        '<div class="venta-lineas">' + (queComproHTML(v) || '<small>' + esc(tipoVentaTexto(v.tipoVenta)) + '</small>') + '</div>' +
+        '<div class="venta-lineas"><small>Proveedor: <strong>' + esc(prov) + '</strong> · Estado: ' + esc(v.estado || t.estado || '') + ' · ' + fechaMX(v.fecha) + '</small></div>';
+      box.appendChild(d);
+    });
+    $$('[data-orden]', box).forEach(cb => cb.onchange = () => {
+      cb.checked ? state.ordenesSel.add(cb.dataset.orden) : state.ordenesSel.delete(cb.dataset.orden);
+      guardarOrdenesSel();
+      actualizarOrdenesGrupos();
+      actualizarOrdenesContador();
+    });
+    actualizarOrdenesGrupos();
+    actualizarOrdenesContador();
+  } catch (e) { box.innerHTML = ''; showError('No se pudieron cargar los trabajos: ' + e.message); }
+}
+function limpiarOrdenesSel() {
+  state.ordenesSel.clear();
+  guardarOrdenesSel();
+  cargarOrdenes();
+}
+/* Arma la hoja de UN proveedor (1 a 9 etiquetas): trae la graduación
+   de cada trabajo con getVenta (respuesta trae `historia`) y abre el
+   documento en la vista de documento, formato carta. Muestra
+   "Cargando etiquetas…" mientras se arman. El botón "Compartir
+   imagen" NO se habilita para órdenes en esta fase (fuera de alcance),
+   pero el documento usa la estructura .doc estándar. */
+async function abrirHojaOrdenes(proveedor, trabajosHoja, hojaNum, totalHojas) {
+  const area = $('#docArea');
+  area.innerHTML = '<p class="hint">Cargando etiquetas…</p>';
+  show('doc');
+  try {
+    const datos = [];
+    for (const t of trabajosHoja) {
+      datos.push(await api('getVenta', { ventaId: t.ventaId }));
+    }
+    area.innerHTML = docOrdenHojaHTML(datos, proveedor, hojaNum, totalHojas);
+    state.currentDoc = { kind: 'orden', venta: null, cliente: null, volverA: 'ordenes' };
+    aplicarTamanoPagina('orden'); // @page letter, ya puesto en Fase 3
+    $('#btnDocCompartir').hidden = true;
+  } catch (e) {
+    area.innerHTML = '';
+    show('ordenes');
+    showError('No se pudo armar la hoja: ' + e.message);
+  }
+}
+
+/* ---------- Ventas (Fase 2): últimas 50, con buscador por folio o cliente ---------- */
+async function cargarVentas() {
+  const q = ($('#ventasBuscar') && $('#ventasBuscar').value.trim()) || '';
+  const box = $('#ventasList');
+  const count = $('#ventasCount');
+  box.innerHTML = '<p class="hint">Cargando…</p>';
+  try {
+    const ventas = await api('getVentas', q ? { q } : {});
+    if (!ventas.length) {
+      box.innerHTML = '<p class="hint">' + (q ? 'Sin ventas para "' + esc(q) + '". Prueba con otro folio o nombre.' : 'Aún no hay ventas registradas.') + '</p>';
+      if (count) count.textContent = '';
+      return;
+    }
+    box.innerHTML = '';
+    ventas.forEach(v => {
+      const wrap = document.createElement('div');
+      wrap.innerHTML = ventaResumenHTML(v);
+      box.appendChild(wrap.firstChild);
+    });
+    wireVentaButtons(box);
+    if (count) count.textContent = 'Mostrando ' + ventas.length + ' venta' + (ventas.length === 1 ? '' : 's') + (q ? ' para "' + q + '"' : ' (últimas 50)') + '.';
+  } catch (e) {
+    box.innerHTML = '';
+    showError('No se pudieron cargar las ventas: ' + e.message, $('#ventasError'));
+  }
 }
 
 /* ---------- Resumen, gastos, fondo, corte de caja ---------- */
@@ -853,14 +1161,17 @@ async function abrirFichaVenta(ventaId) {
   try {
     const d = await api('getVenta', { ventaId });
     const v = d.venta, c = d.cliente || {};
+    v.pagos = d.pagos || v.pagos || [];
     state.currentVenta = v;
     state.currentHistoria = d.historia || null;
     $('#ventaFicha').innerHTML = '<div class="card"><h3>' + esc(v.folio || v.id) + ' · ' + esc(c.nombre || v.clienteNombre || '') + '</h3>' +
-      '<p>' + fechaMX(v.fecha) + ' · ' + esc(v.tipoVenta || '') + ' · Estado: ' + esc(v.estado || '') + '</p>' +
+      '<p>' + fechaMX(v.fecha) + ' · ' + esc(tipoVentaTexto(v.tipoVenta)) + ' · ' + estadoChipHTML(v.estado) + '</p>' +
+      '<h4>Qué se compró</h4><div class="venta-lineas">' + (queComproHTML(v) || '<p class="hint">Sin detalle registrado.</p>') + '</div>' +
       '<table><tr><th>Total</th><td>' + money(v.totalManual) + '</td></tr>' +
       '<tr><th>A cuenta</th><td>' + money(v.aCuenta) + '</td></tr>' +
       '<tr class="total-row"><th>Saldo</th><td>' + money(v.saldo) + '</td></tr></table>' +
-      '<h4>Pagos</h4>' + ((d.pagos || v.pagos || []).map(p => '<p><small>' + fechaMX(p.fecha) + ' · ' + money(p.monto) + ' · ' + esc(p.metodo || '') + ' · ' + esc(p.concepto || '') + '</small></p>').join('') || '<p class="hint">Sin pagos registrados.</p>') +
+      '<h4>Pagos</h4>' + (v.pagos.map(pagoLineaHTML).join('') || '<p class="hint">Sin pagos registrados.</p>') +
+      (metodosChipsHTML(v) ? '<p>' + metodosChipsHTML(v) + '</p>' : '') +
       '<p><small>Graduación (solo informativa): OD Esf ' + esc((v.graduacion && v.graduacion.esfOD) || '—') + ' · OI Esf ' + esc((v.graduacion && v.graduacion.esfOI) || '—') + '</small></p></div>';
     show('venta');
   } catch (e) { showError('No se pudo abrir la ficha: ' + e.message); }
@@ -874,6 +1185,98 @@ async function registrarAbono() {
     $('#abonoMonto').value = '';
     abrirFichaVenta(state.currentVentaId);
   } catch (e) { showError('No se pudo registrar el abono: ' + e.message); }
+}
+/* ---------- Registrar abono (vista rápida, desde el dashboard) ----------
+   Reutiliza las acciones del backend ya existentes: buscarCliente,
+   getCliente, getVenta y registrarAbono. Sin cambios al contrato API.
+   Funciona en modo demo (el folio de la venta demo es su ID: VTA-0001). */
+async function mostrarAbonoVenta(ventaId) {
+  try {
+    const d = await api('getVenta', { ventaId });
+    const v = d.venta, c = d.cliente || {};
+    v.pagos = d.pagos || v.pagos || [];
+    state.abonoVentaId = v.id || ventaId;
+    state.abonoSaldo = Number(v.saldo || 0);
+    const liquidada = state.abonoSaldo <= 0;
+    $('#abVentaCard').innerHTML = '<h3>' + esc(v.folio || v.id) + ' · ' + esc(c.nombre || v.clienteNombre || '') + '</h3>' +
+      '<p>' + fechaMX(v.fecha) + ' · ' + esc(tipoVentaTexto(v.tipoVenta)) + ' · ' + estadoChipHTML(v.estado) + '</p>' +
+      '<div class="venta-lineas">' + (queComproHTML(v) || '') + '</div>' +
+      '<table><tr><th>Total</th><td>' + money(v.totalManual) + '</td></tr>' +
+      '<tr><th>A cuenta</th><td>' + money(v.aCuenta) + '</td></tr>' +
+      '<tr class="total-row"><th>Saldo pendiente</th><td>' + money(v.saldo) + '</td></tr></table>' +
+      '<h4>Pagos</h4>' + (v.pagos.map(pagoLineaHTML).join('') || '<p class="hint">Sin pagos registrados.</p>') +
+      (liquidada ? '<p class="success">Esta venta ya está liquidada.</p>' : '');
+    $('#abVentaBox').hidden = false;
+    $('#abMonto').disabled = liquidada;
+    $('#btnAbGuardar').disabled = liquidada;
+    $('#btnAbLiquidar').disabled = liquidada;
+    $('#abMonto').value = '';
+    $('#abError').hidden = true;
+    $('#abVentaBox').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (e) {
+    showError('No se encontró la venta: ' + e.message, $('#abError'));
+  }
+}
+async function buscarAbonoPorFolio() {
+  const f = $('#abFolio').value.trim().toUpperCase();
+  if (!f) { showError('Escribe el folio de la venta (ej. VTA-0001).', $('#abError')); return; }
+  $('#abResultados').innerHTML = '';
+  await mostrarAbonoVenta(f);
+}
+async function buscarAbonoPorCliente() {
+  const q = $('#abBuscar').value.trim();
+  if (!q) return;
+  try {
+    const res = await api('buscarCliente', { q });
+    const box = $('#abResultados');
+    box.innerHTML = res.length ? '' : '<p class="hint">Sin resultados.</p>';
+    res.forEach(c => {
+      const d = document.createElement('div');
+      d.className = 'list-item';
+      d.innerHTML = clienteItemHTML(c);
+      const b = document.createElement('button');
+      b.className = 'btn btn-secondary'; b.type = 'button'; b.textContent = 'Ver sus ventas';
+      b.onclick = () => mostrarVentasClienteAbono(c);
+      d.appendChild(b);
+      box.appendChild(d);
+    });
+  } catch (e) { showError('Error al buscar: ' + e.message, $('#abError')); }
+}
+async function mostrarVentasClienteAbono(c) {
+  try {
+    const d = await api('getCliente', { id: c.id });
+    const box = $('#abResultados');
+    const ventas = d.ventas || [];
+    const pendientes = ventas.filter(v => Number(v.saldo || 0) > 0);
+    const liquidadas = ventas.filter(v => Number(v.saldo || 0) <= 0);
+    box.innerHTML = '<h3>Ventas de ' + esc(c.nombre) + '</h3>';
+    if (!ventas.length) { box.innerHTML += '<p class="hint">Sin ventas registradas.</p>'; return; }
+    if (!pendientes.length) box.innerHTML += '<p class="hint">Todas sus ventas están liquidadas.</p>';
+    pendientes.forEach(v => {
+      const item = document.createElement('div');
+      item.className = 'list-item';
+      item.innerHTML = '<strong>' + esc(v.folio || v.id) + '</strong> · ' + fechaMX(v.fecha) +
+        '<div class="venta-lineas">' + (queComproHTML(v) || '') + '</div>' +
+        '<small>Total ' + money(v.totalManual) + ' · Pagado ' + money(v.aCuenta) + ' · Saldo ' + money(v.saldo) + ' · ' + esc(v.estado || '') + '</small>' + metodosChipsHTML(v);
+      const b = document.createElement('button');
+      b.className = 'btn btn-primary'; b.type = 'button'; b.textContent = 'Abonar a esta venta';
+      b.onclick = () => mostrarAbonoVenta(v.id);
+      item.appendChild(b);
+      box.appendChild(item);
+    });
+    if (liquidadas.length) box.innerHTML += '<p class="hint">Liquidadas: ' + liquidadas.map(v => esc(v.folio || v.id)).join(', ') + '</p>';
+  } catch (e) { showError('No se pudieron cargar las ventas: ' + e.message, $('#abError')); }
+}
+async function registrarAbonoRapido() {
+  const monto = Number($('#abMonto').value || 0);
+  if (!state.abonoVentaId) { showError('Primero busca y elige una venta.', $('#abError')); return; }
+  if (!(monto > 0)) { showError('Captura un monto mayor a 0.', $('#abError')); return; }
+  if (monto > state.abonoSaldo) { showError('El monto no puede ser mayor al saldo (' + money(state.abonoSaldo) + ').', $('#abError')); return; }
+  try {
+    const r = await api('registrarAbono', { ventaId: state.abonoVentaId, monto, metodo: $('#abMetodo').value, concepto: $('#abConcepto').value });
+    showOk('Abono registrado. Nuevo saldo: ' + money(r.saldo), $('#abMsg'));
+    await mostrarAbonoVenta(state.abonoVentaId);
+  } catch (e) { showError('No se pudo registrar el abono: ' + e.message, $('#abError')); }
 }
 async function registrarCorreccion() {
   const campo = $('#corrCampo').value;
@@ -939,6 +1342,35 @@ function docHead(titulo) {
     '<div><strong>' + esc(NEGOCIO.nombre) + '</strong> · Sucursal ' + esc(NEGOCIO.sucursal) + '</div>' +
     '<div class="addr">' + esc(NEGOCIO.direccion) + ' · Tel. ' + esc(NEGOCIO.telefonos) + '</div></div></div>';
 }
+/* ---------- Fase 4: graduación y lente de contacto ----------
+   Una venta LLEVA lente de contacto solo si tiene tipo Y precio mayor
+   a 0: ventas ya guardadas como VTA-0001 traen LC_Tipo 'Esférico' con
+   LC_Precio_Def 0 (el wizard mandaba lcTipo siempre) y NO deben
+   mostrar la línea de LC en ningún documento.
+   La graduación NO vive en la venta: en producción la venta no trae
+   `graduacion` (ver docOrdenHTML); vive en la historia clínica, que
+   accGetVenta devuelve como `historia` (gradEsfOD… en camelCase). */
+function llevaLC(v) {
+  return !!(v && v.lcTipo && Number(v.lcPrecioDef) > 0);
+}
+function graduacionDe(d) {
+  const v = (d && d.venta) || {};
+  const h = (d && d.historia) || v.historia || {};
+  // Si la venta trae graduación incrustada (solo modo demo), manda
+  // ella; si no, la de la historia clínica (última del cliente).
+  if (v.graduacion && (v.graduacion.esfOD || v.graduacion.cilOD || v.graduacion.esfOI || v.graduacion.cilOI)) return v.graduacion;
+  return { esfOD: h.gradEsfOD, cilOD: h.gradCilOD, ejeOD: h.gradEjeOD, esfOI: h.gradEsfOI, cilOI: h.gradCilOI, ejeOI: h.gradEjeOI, add: h.gradAdd, dnp: h.dnp };
+}
+function graduacionVacia(g) {
+  g = g || {};
+  return !['esfOD', 'cilOD', 'ejeOD', 'esfOI', 'cilOI', 'ejeOI'].some(k => g[k] !== '' && g[k] != null);
+}
+/* La historia del wizard (paso 2) guarda la graduación con las claves
+   gradEsfOD…; vacía = ninguno de los 6 valores de esfera/cilindro/eje. */
+function historiaSinGraduacion(h) {
+  h = h || {};
+  return graduacionVacia({ esfOD: h.gradEsfOD, cilOD: h.gradCilOD, ejeOD: h.gradEjeOD, esfOI: h.gradEsfOI, cilOI: h.gradCilOI, ejeOI: h.gradEjeOI });
+}
 function rxTabla(g) {
   g = g || {};
   return '<table class="rx-table"><tr><th></th><th>Esf</th><th>Cil</th><th>Eje</th></tr>' +
@@ -948,7 +1380,7 @@ function rxTabla(g) {
 }
 function docHistoriaHTML(d) {
   const v = d.venta || {}, c = d.cliente || {}, h = d.historia || v.historia || {};
-  const g = v.graduacion || { esfOD: h.gradEsfOD, cilOD: h.gradCilOD, ejeOD: h.gradEjeOD, esfOI: h.gradEsfOI, cilOI: h.gradCilOI, ejeOI: h.gradEjeOI, add: h.gradAdd, dnp: h.dnp };
+  const g = graduacionDe(d);
   return '<div class="doc doc-historia">' + docHead('Historia clínica') +
     '<div class="hc-grid"><div><strong>Paciente:</strong> ' + esc(c.nombre || v.clienteNombre || '') + '</div>' +
     '<div><strong>Fecha:</strong> ' + fechaMX(v.fecha || h.fecha) + '</div>' +
@@ -969,54 +1401,153 @@ function docHistoriaHTML(d) {
     '<p><strong>Recomendación:</strong> ' + esc(h.recomendacion || '') + '</p>' +
     '<div class="sig"><div>Firma del paciente</div><div>Firma del optometrista</div></div></div>';
 }
-function docOrdenHTML(d) {
+/* ---------- Fase 5: órdenes de trabajo — marca Luna, 1 etiqueta/trabajo ----------
+   SOLO en las órdenes de trabajo va Laboratorio Óptico Luna (nombre en
+   texto + logo-luna.png con onerror: si el archivo aún no existe, la
+   imagen se oculta y queda solo el texto, sin imagen rota). En el HTML
+   de la orden NO aparece "Boutique de Lentes Yael" en ningún lado: ni
+   encabezado, ni etiquetas, ni notas al pie. El resto de documentos y
+   la app siguen con Yael. */
+function docOrdenHeadHTML() {
+  return '<div class="doc-head doc-head-luna"><img src="' + LABORATORIO.logo + '" alt="Laboratorio Óptico Luna" onerror="this.style.display=\'none\'"><div><div class="doc-title">Orden de trabajo</div><div><strong>' + esc(LABORATORIO.nombre) + '</strong></div><div class="addr">' + esc(LABORATORIO.direccion) + ' · Tel. ' + esc(LABORATORIO.telefonos) + '</div></div></div>';
+}
+/* UNA etiqueta por trabajo: folio, cliente, fecha, edad, graduación
+   (Esf/Cil/Eje OD y OI, Add, DNP — vía graduacionDe, de la historia
+   clínica), diseño, material, tratamiento, proveedor y armazón
+   (material, diseño, modelo, color). Si no hay graduación en ningún
+   lado, la etiqueta muestra el mismo aviso visible de Fase 4
+   ("Graduación no registrada") en vez de guiones silenciosos. */
+function ordenEtiquetaHTML(d) {
   const v = d.venta || {}, c = d.cliente || {};
-  const g = v.graduacion || {};
-  const etiqueta = '<div class="orden-label"><h4>' + esc(NEGOCIO.nombre) + ' · ' + esc(v.folio || v.id || '') + '</h4>' +
+  const g = graduacionDe(d);
+  const sinGrad = graduacionVacia(g);
+  const rx = sinGrad
+    ? '<div class="orden-sin-grad">⚠ Graduación no registrada — captúrala en la historia clínica</div>'
+    : '<table><tr><th></th><th>Esf</th><th>Cil</th><th>Eje</th></tr>' +
+      '<tr><td>O.D.</td><td>' + esc(g.esfOD || '—') + '</td><td>' + esc(g.cilOD || '—') + '</td><td>' + esc(g.ejeOD || '—') + '</td></tr>' +
+      '<tr><td>O.I.</td><td>' + esc(g.esfOI || '—') + '</td><td>' + esc(g.cilOI || '—') + '</td><td>' + esc(g.ejeOI || '—') + '</td></tr></table>' +
+      '<div>Add ' + esc(g.add || '—') + ' · DNP ' + esc(g.dnp || '—') + '</div>';
+  return '<div class="orden-label"><h4>' + esc(LABORATORIO.nombre) + ' · ' + esc(v.folio || v.id || '') + '</h4>' +
     '<div>' + esc(c.nombre || v.clienteNombre || '') + ' · ' + fechaMX(v.fecha) + ' · ' + esc(String(c.edad || '')) + ' años</div>' +
-    '<table><tr><th></th><th>Esf</th><th>Cil</th><th>Eje</th></tr>' +
-    '<tr><td>O.D.</td><td>' + esc(g.esfOD || '—') + '</td><td>' + esc(g.cilOD || '—') + '</td><td>' + esc(g.ejeOD || '—') + '</td></tr>' +
-    '<tr><td>O.I.</td><td>' + esc(g.esfOI || '—') + '</td><td>' + esc(g.cilOI || '—') + '</td><td>' + esc(g.ejeOI || '—') + '</td></tr></table>' +
-    '<div>Add ' + esc(g.add || '—') + ' · DNP ' + esc(g.dnp || '—') + '</div>' +
+    rx +
     '<div>Diseño: ' + esc(v.lenteDiseno || v.lcTipo || '') + ' · Material: ' + esc(v.lenteMaterial || '') + '</div>' +
     '<div>Tratamiento: ' + esc(v.lenteTratamiento || '') + ' · Prov. ' + esc(v.lenteProveedor || '') + '</div>' +
     '<div>Armazón: ' + esc(v.armazonMaterial || '') + ' ' + esc(v.armazonDiseno || '') + ' · ' + esc(v.armazonModelo || '') + ' · Color ' + esc(v.armazonColor || '') + '</div></div>';
-  return '<div class="doc"><div class="doc-head"><img src="logo.png" alt="Boutique de Lentes Yael"><div><div class="doc-title">Orden de trabajo</div><div class="addr">' + esc(NEGOCIO.direccion) + ' · Tel. ' + esc(NEGOCIO.telefonos) + '</div></div></div>' +
-    '<p class="hint">9 etiquetas por hoja (A8 / 1/16 de carta). Se imprime la misma etiqueta 9 veces para cortar.</p>' +
-    '<div class="doc-orden-grid">' + etiqueta.repeat(9) + '</div></div>';
 }
+/* Una hoja de órdenes: hasta 9 etiquetas (3×3) de UN solo proveedor,
+   formato carta (el @page letter lo pone aplicarTamanoPagina('orden')).
+   La marca de agua es el logo de Luna (.doc-watermark-luna); si
+   logo-luna.png no existe, el fondo simplemente no se pinta y la hoja
+   queda sin marca de agua (nunca imagen rota: es fondo CSS, no <img>).
+   Estructura .doc estándar para que el compartir como imagen de Fase 3
+   la siga serializando si se habilita después (hoy NO se habilita el
+   botón para órdenes). */
+function docOrdenHojaHTML(datos, proveedor, hojaNum, totalHojas) {
+  datos = datos || [];
+  hojaNum = hojaNum || 1;
+  totalHojas = totalHojas || 1;
+  const sinGradFolios = datos
+    .filter(x => graduacionVacia(graduacionDe(x)))
+    .map(x => (x.venta && (x.venta.folio || x.venta.id)) || '');
+  return '<div class="doc doc-orden">' +
+    '<div class="doc-watermark doc-watermark-luna" aria-hidden="true"></div>' +
+    docOrdenHeadHTML() +
+    '<p class="orden-hoja-info"><strong>Proveedor: ' + esc(proveedor || SIN_PROVEEDOR) + '</strong> · Hoja ' + hojaNum + ' de ' + totalHojas + ' · ' + datos.length + ' etiqueta' + (datos.length === 1 ? '' : 's') + ' (de 1 a 9 por hoja)</p>' +
+    (sinGradFolios.length ? '<p class="error doc-orden-aviso"><strong>⚠ Graduación no registrada</strong> en: ' + esc(sinGradFolios.join(', ')) + '. Captúrala en la historia clínica antes de mandar el trabajo al laboratorio.</p>' : '') +
+    '<div class="doc-orden-grid">' + datos.map(ordenEtiquetaHTML).join('') + '</div></div>';
+}
+/* La orden de UN trabajo (botón "Orden de trabajo" de la ficha de
+   venta): UNA sola etiqueta, ya no la misma 9 veces. */
+function docOrdenHTML(d) {
+  const v = (d && d.venta) || {};
+  const prov = (v.lenteProveedor && String(v.lenteProveedor).trim()) || SIN_PROVEEDOR;
+  return docOrdenHojaHTML([d], prov, 1, 1);
+}
+/* ---------- Fase 5: agrupar por proveedor y partir en hojas ----------
+   Funciones puras (sin DOM): se prueban en Node. Los trabajos sin
+   proveedor van en un grupo aparte "Sin proveedor", bien visible,
+   nunca se descartan en silencio; ese grupo queda siempre al final. */
+function agruparOrdenesPorProveedor(trabajos) {
+  const grupos = {};
+  const orden = [];
+  (trabajos || []).forEach(t => {
+    const v = (t && t.venta) || {};
+    const prov = (v.lenteProveedor && String(v.lenteProveedor).trim()) || SIN_PROVEEDOR;
+    if (!grupos[prov]) { grupos[prov] = []; orden.push(prov); }
+    grupos[prov].push(t);
+  });
+  // "Sin proveedor" siempre al final, aunque se haya visto primero.
+  orden.sort((a, b) => (a === SIN_PROVEEDOR ? 1 : 0) - (b === SIN_PROVEEDOR ? 1 : 0));
+  return orden.map(p => ({ proveedor: p, trabajos: grupos[p] }));
+}
+function partirEnHojas(items, porHoja) {
+  const n = Math.max(1, porHoja || ETIQUETAS_POR_HOJA);
+  const hojas = [];
+  for (let i = 0; i < (items || []).length; i += n) hojas.push(items.slice(i, i + n));
+  return hojas;
+}
+/* Ticket 58 mm estilo ANTERIOR (Fase 4): monocromo, logo de Yael
+   centrado arriba sin deformar (logo.png es apaisado, no circular),
+   nombre del negocio, dirección y teléfonos de Calle 4,
+   "COMPROBANTE DE VENTA" + folio, cliente + ID + fecha, conceptos,
+   Subtotal (precios definidos), Descuento, TOTAL GRANDE en negrita,
+   Pagado, Saldo en negrita, Estado y "Gracias por su preferencia".
+   Sigue con las clases .doc .doc-ticket para que el compartir como
+   imagen de la Fase 3 (generarImagenDocumento) lo siga serializando.
+   La graduación NO aparece en el ticket. */
 function docTicketHTML(d) {
   const v = d.venta || {}, c = d.cliente || {};
   const filas = [];
   if (v.armazonMaterial) filas.push(['ARMAZÓN — ' + v.armazonMaterial + ' / ' + v.armazonDiseno, money(v.armazonPrecioDef)]);
   if (v.lenteMaterial) filas.push(['LENTE — ' + v.lenteMaterial + ' ' + v.lenteDiseno + ' ' + v.lenteTratamiento, money(v.lentePrecioDef)]);
-  if (v.lcTipo) filas.push(['LENTE DE CONTACTO — ' + v.lcTipo + ' ' + v.lcMarca + ' (caja de 6)', money(v.lcPrecioDef)]);
+  // Fase 4: la línea de LC solo si la venta REALMENTE lleva LC
+  // (lcTipo no vacío Y lcPrecioDef > 0). VTA-0001 trae LC_Tipo
+  // 'Esférico' con precio 0 y ya no muestra la línea en $0.00.
+  if (llevaLC(v)) filas.push(['LENTE DE CONTACTO — ' + v.lcTipo + ' ' + (v.lcMarca || '') + ' (caja de 6)', money(v.lcPrecioDef)]);
   if (v.tipoVenta === 'rebisel') filas.push(['REBISEL — ' + (v.rebiselConcepto || ''), money(v.armazonPrecioDef)]);
   if (v.tipoVenta === 'accesorio') filas.push(['ACCESORIO — ' + (v.accesorioDesc || ''), money(v.armazonPrecioDef)]);
-  // La graduación NO aparece en el ticket.
-  return '<div class="doc doc-ticket"><div class="center"><img src="logo.png" alt="Boutique de Lentes Yael" style="width:120px;height:auto"></div>' +
-    '<h2>' + esc(NEGOCIO.nombre) + '</h2><p>' + esc(NEGOCIO.direccion) + '<br>Tel. ' + esc(NEGOCIO.telefonos) + '</p><hr>' +
-    '<p>COMPROBANTE DE VENTA<br>' + esc(v.folio || v.id || '') + '</p>' +
-    '<p>Cliente: ' + esc(c.nombre || v.clienteNombre || '') + '<br>ID ' + esc(c.id || '') + ' · Fecha ' + fechaMX(v.fecha) + '</p><hr>' +
-    '<table>' + filas.map(f => '<tr><td>' + esc(f[0]) + '</td><td>' + f[1] + '</td></tr>').join('') + '</table><hr>' +
-    '<table><tr><td>TOTAL</td><td>' + money(v.totalManual) + '</td></tr>' +
+  // Descuento = precio definido total − total manual (campos que ya
+  // trae la venta; si falta el definido, se omite el bloque).
+  const precioDef = Number(v.precioDefTotal);
+  const tieneDef = Number.isFinite(precioDef) && v.precioDefTotal !== '' && v.precioDefTotal != null;
+  const descNum = Number(v.descuento);
+  const descuento = Number.isFinite(descNum) && v.descuento !== '' && v.descuento != null
+    ? descNum : (tieneDef ? precioDef - Number(v.totalManual || 0) : NaN);
+  const estado = Number(v.saldo) > 0 ? 'PENDIENTE' : 'LIQUIDADO';
+  return '<div class="doc doc-ticket">' +
+    '<div class="tk-center"><img class="ticket-logo" src="logo.png" alt="Boutique de Lentes Yael"></div>' +
+    '<div class="tk-nombre">' + esc(NEGOCIO.nombre) + '</div>' +
+    '<p class="tk-center">' + esc(NEGOCIO.direccion) + '<br>Tel. ' + esc(NEGOCIO.telefonos) + '</p><hr>' +
+    '<p class="tk-titulo">COMPROBANTE DE VENTA</p>' +
+    '<p class="tk-center tk-folio">' + esc(v.folio || v.id || '') + '</p>' +
+    '<div class="tk-cliente"><strong>Cliente:</strong><br>' + esc(c.nombre || v.clienteNombre || '') + '<br>ID: ' + esc(c.id || v.clienteId || '') + '<br>Fecha: ' + fechaMX(v.fecha) + '</div><hr>' +
+    '<table class="tk-conceptos">' + filas.map(f => '<tr><td>' + esc(f[0]) + '</td><td>' + f[1] + '</td></tr>').join('') + '</table><hr>' +
+    '<table class="tk-totales">' +
+    (tieneDef ? '<tr><td>Subtotal</td><td>' + money(precioDef) + '</td></tr>' : '') +
+    (Number.isFinite(descuento) ? '<tr><td>Descuento</td><td>' + money(descuento) + '</td></tr>' : '') +
+    '<tr class="tk-total"><td>TOTAL</td><td>' + money(v.totalManual) + '</td></tr>' +
     '<tr><td>Pagado</td><td>' + money(v.aCuenta) + '</td></tr>' +
-    '<tr><td>Saldo</td><td>' + money(v.saldo) + '</td></tr>' +
-    '<tr><td>Estado</td><td>' + esc(v.saldo > 0 ? 'PENDIENTE' : 'LIQUIDADO') + '</td></tr></table><hr>' +
-    '<p>Gracias por su preferencia</p></div>';
+    '<tr class="tk-saldo"><td>Saldo</td><td>' + money(v.saldo) + '</td></tr>' +
+    '<tr><td>Estado</td><td>' + estado + '</td></tr></table><hr>' +
+    '<p class="tk-center">Gracias por su preferencia</p>' +
+    '<p class="tk-center"><strong>' + esc(NEGOCIO.nombre) + '</strong></p></div>';
 }
 function docComprobanteHTML(d) {
   const v = d.venta || {}, c = d.cliente || {};
   const prox = new Date(v.fecha || hoyISO());
   prox.setMonth(prox.getMonth() + PROXIMA_VISITA_MESES);
   // La graduación NO aparece en el comprobante.
+  // Fase 3: el logo va directo sobre el degradado (logo.png es
+  // transparente; ya no lleva cuadro blanco) y lleva marca de agua al
+  // fondo (div .doc-watermark, ver styles.css).
   return '<div class="doc doc-comprobante">' +
-    '<div class="banner-top"><img src="logo.png" alt="Boutique de Lentes Yael" style="width:140px;height:auto;background:#fff;border-radius:8px;padding:4px"><div style="text-align:right"><div class="doc-title" style="color:#fff">Comprobante de venta</div><div>PEDIDO No. ' + esc(v.folio || v.id || '') + '</div><div>FECHA ' + fechaMX(v.fecha) + '</div></div></div>' +
+    '<div class="doc-watermark" aria-hidden="true"></div>' +
+    '<div class="banner-top"><img class="banner-logo" src="logo.png" alt="Boutique de Lentes Yael"><div style="text-align:right"><div class="doc-title" style="color:#fff">Comprobante de venta</div><div>PEDIDO No. ' + esc(v.folio || v.id || '') + '</div><div>FECHA ' + fechaMX(v.fecha) + '</div></div></div>' +
     '<p><strong>Nombre:</strong> ' + esc(c.nombre || v.clienteNombre || '') + ' &nbsp; <strong>Móvil:</strong> ' + esc(c.telefono || v.telefono || '') + '</p>' +
     '<table><tr><th>Concepto</th><th>Detalle</th><th>Precio</th></tr>' +
     (v.armazonMaterial ? '<tr><td>Armazón</td><td>' + esc(v.armazonMaterial) + ' ' + esc(v.armazonDiseno) + ' · Modelo ' + esc(v.armazonModelo || '') + ' · Marca ' + esc(v.armazonMarca || '') + ' · Color ' + esc(v.armazonColor || '') + '</td><td>' + money(v.armazonPrecioDef) + '</td></tr>' : '') +
     (v.lenteMaterial ? '<tr><td>Lente</td><td>' + esc(v.lenteMaterial) + ' ' + esc(v.lenteDiseno) + ' · ' + esc(v.lenteTratamiento || '') + ' · Proveedor ' + esc(v.lenteProveedor || '') + '</td><td>' + money(v.lentePrecioDef) + '</td></tr>' : '') +
-    (v.lcTipo ? '<tr><td>Lente de contacto</td><td>' + esc(v.lcTipo) + ' · ' + esc(v.lcMarca || '') + ' · Caja de 6 lentes · Reemplazo mensual · BC ' + esc(v.lcCurvaBase || '') + ' · Ø ' + esc(v.lcDiametro || '') + '</td><td>' + money(v.lcPrecioDef) + '</td></tr>' : '') +
+    (llevaLC(v) ? '<tr><td>Lente de contacto</td><td>' + esc(v.lcTipo) + ' · ' + esc(v.lcMarca || '') + ' · Caja de 6 lentes · Reemplazo mensual · BC ' + esc(v.lcCurvaBase || '') + ' · Ø ' + esc(v.lcDiametro || '') + '</td><td>' + money(v.lcPrecioDef) + '</td></tr>' : '') +
     (v.tipoVenta === 'rebisel' ? '<tr><td>Rebisel</td><td>' + esc(v.rebiselConcepto || '') + '</td><td>' + money(v.armazonPrecioDef) + '</td></tr>' : '') +
     (v.tipoVenta === 'accesorio' ? '<tr><td>Accesorio</td><td>' + esc(v.accesorioDesc || '') + '</td><td>' + money(v.armazonPrecioDef) + '</td></tr>' : '') +
     '<tr><td>Total parcial</td><td></td><td>' + money(v.precioDefTotal) + '</td></tr>' +
@@ -1061,28 +1592,183 @@ async function abrirDoc(kind, ventaId, extra) {
   const builders = { historia: docHistoriaHTML, orden: docOrdenHTML, ticket: docTicketHTML, comprobante: docComprobanteHTML, materiales: docMaterialesHTML };
   $('#docArea').innerHTML = (builders[kind] || docHistoriaHTML)(data);
   state.currentDoc = { kind, venta: data.venta || null, cliente: data.cliente || null };
+  aplicarTamanoPagina(kind); // el @page queda listo antes de imprimir
   const shareBtn = $('#btnDocCompartir');
   shareBtn.hidden = !(kind === 'ticket' || kind === 'comprobante');
   show('doc');
+}
+/* ---------- Fase 3: tamaño de página al imprimir / PDF ----------
+   El @page se inyecta según el documento actual para que el PDF salga
+   con el tamaño del documento y no con el tamaño por defecto del
+   diálogo de impresión (antes salía en Quarto aunque el comprobante es
+   media carta). Se llama al abrir el documento y al pulsar Imprimir. */
+const PAGE_SIZES = {
+  comprobante: '5.5in 8.5in',   // media carta
+  historia: '5.5in 8.5in',      // media carta
+  orden: 'letter',              // carta
+  ticket: '58mm auto',         // 58 mm
+  materiales: 'letter'          // carta
+};
+function aplicarTamanoPagina(kind) {
+  const size = PAGE_SIZES[kind] || 'letter';
+  const margin = kind === 'ticket' ? '0' : '8mm';
+  let st = document.getElementById('pageSizeStyle');
+  if (!st) {
+    st = document.createElement('style');
+    st.id = 'pageSizeStyle';
+    document.head.appendChild(st);
+  }
+  st.textContent = '@page { size: ' + size + '; margin: ' + margin + '; }';
+}
+function imprimirDoc() {
+  if (state.currentDoc) aplicarTamanoPagina(state.currentDoc.kind);
+  window.print();
+}
+
+/* ---------- Fase 3: compartir el documento como IMAGEN ----------
+   Sin librerías externas (todo offline): el documento visible se
+   serializa a SVG con <foreignObject>, se dibuja en un canvas a 2x y
+   se exporta como PNG para compartirlo con el menú nativo de Android
+   (WhatsApp, impresora, etc.). Fallbacks en orden:
+   1) navigator.share con archivos -> 2) descarga del PNG y aviso ->
+   3) si la imagen no se pudo generar, texto por share / wa.me (el
+   comportamiento anterior; el botón nunca queda muerto). Cancelar el
+   menú de compartir no dispara ningún fallback. */
+function construirSvgDocumento(html, css, ancho, alto) {
+  // Función pura (sin DOM): construye el SVG que incrusta el HTML del
+  // documento. Se prueba en Node extrayéndola de este archivo.
+  const w = Math.max(1, Math.round(ancho || 0));
+  const h = Math.max(1, Math.round(alto || 0));
+  return '<svg xmlns="http://www.w3.org/2000/svg" width="' + (w * 2) + '" height="' + (h * 2) + '" viewBox="0 0 ' + w + ' ' + h + '">' +
+    '<foreignObject x="0" y="0" width="100%" height="100%">' +
+    '<div xmlns="http://www.w3.org/1999/xhtml"><style>' + css + '</style>' + html + '</div>' +
+    '</foreignObject></svg>';
+}
+function imagenADataURL(src) {
+  // fetch local + FileReader: la imagen queda incrustada como data URL
+  // para que el SVG la pinte sin red.
+  return fetch(src).then(r => {
+    if (!r.ok) throw new Error('HTTP ' + r.status + ' al cargar ' + src);
+    return r.blob();
+  }).then(blob => new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => res(fr.result);
+    fr.onerror = () => rej(new Error('No se pudo leer ' + src));
+    fr.readAsDataURL(blob);
+  }));
+}
+async function generarImagenDocumento(nodo) {
+  const ancho = nodo.offsetWidth || nodo.getBoundingClientRect().width;
+  const alto = nodo.offsetHeight || nodo.getBoundingClientRect().height;
+  if (!ancho || !alto) throw new Error('No se pudo medir el documento.');
+  const clon = nodo.cloneNode(true);
+  // Estilos: se incrustan los de styles.css (fetch local). Si el fetch
+  // falla, se sigue con una base mínima; los estilos en línea del clon
+  // se conservan. Las reglas @media print del archivo no aplican aquí
+  // (el contexto es pantalla), así que no contaminan la imagen.
+  let css = '';
+  try {
+    const r = await fetch('styles.css');
+    if (r.ok) css = await r.text();
+  } catch (e) { css = ''; }
+  css += '\n.doc{color:#241f31;background:#fff;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;line-height:1.45;}';
+  // Imágenes del documento (logo.png, etc.) como data URL. Si una no
+  // carga, se quita solo esa imagen y se sigue con el resto.
+  const imgs = Array.from(clon.querySelectorAll('img'));
+  await Promise.all(imgs.map(async img => {
+    const src = img.getAttribute('src');
+    if (!src || src.indexOf('data:') === 0) return;
+    try { img.src = await imagenADataURL(src); }
+    catch (e) { img.remove(); }
+  }));
+  // Marca de agua: su fondo es url(logo.png) — o url(logo-luna.png)
+  // en las órdenes de trabajo (Fase 5) —; también se incrusta como
+  // data URL. Si falla, el documento se comparte sin marca de agua.
+  const marcas = Array.from(clon.querySelectorAll('.doc-watermark'));
+  await Promise.all(marcas.map(async m => {
+    try {
+      const src = m.classList.contains('doc-watermark-luna') ? 'logo-luna.png' : 'logo.png';
+      const url = await imagenADataURL(src);
+      m.style.backgroundImage = 'url("' + url + '")';
+    } catch (e) { /* sigue sin marca de agua */ }
+  }));
+  const svg = construirSvgDocumento(clon.outerHTML, css, ancho, alto);
+  const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = new Image();
+    await new Promise((res, rej) => {
+      img.onload = res;
+      img.onerror = () => rej(new Error('No se pudo dibujar el documento.'));
+      img.src = url;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(ancho * 2);
+    canvas.height = Math.round(alto * 2);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas no disponible.');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const png = await new Promise((res, rej) => canvas.toBlob(
+      b => (b ? res(b) : rej(new Error('No se pudo exportar el PNG.'))), 'image/png'));
+    return png;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 async function compartirDoc() {
   const doc = state.currentDoc;
   if (!doc) return;
   const v = doc.venta || {};
   const c = doc.cliente || {};
-  const texto = 'Boutique de Lentes Yael (Calle 4) — ' + (doc.kind === 'ticket' ? 'Ticket' : 'Comprobante de venta') + ' ' + (v.folio || '') +
+  const tipoTxt = doc.kind === 'ticket' ? 'Ticket' : 'Comprobante de venta';
+  const texto = 'Boutique de Lentes Yael (Calle 4) — ' + tipoTxt + ' ' + (v.folio || '') +
     ' · Cliente: ' + (c.nombre || v.clienteNombre || '') + ' · Total: ' + money(v.totalManual) + ' · Pagado: ' + money(v.aCuenta) + ' · Saldo: ' + money(v.saldo) +
     (v.saldo > 0 ? ' · Pendiente de liquidar al recoger.' : ' · Liquidado. ¡Gracias por su preferencia!');
+  const btn = $('#btnDocCompartir');
+  const etiquetaOriginal = btn ? btn.textContent : '';
+  const folioLimpio = String(v.folio || doc.kind).replace(/[^A-Za-z0-9_-]/g, '') || doc.kind;
+  const nombreArchivo = doc.kind + '-' + folioLimpio + '.png';
   try {
-    if (navigator.share) {
-      await navigator.share({ title: 'Boutique de Lentes Yael', text: texto });
-      return;
+    const nodo = document.querySelector('#docArea .doc');
+    if (!nodo) throw new Error('Documento no visible.');
+    if (btn) { btn.disabled = true; btn.textContent = 'Generando imagen…'; }
+    const blob = await generarImagenDocumento(nodo);
+    const archivo = new File([blob], nombreArchivo, { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
+      try {
+        await navigator.share({ files: [archivo], title: 'Boutique de Lentes Yael — ' + tipoTxt + ' ' + (v.folio || ''), text: texto });
+        return;
+      } catch (e) {
+        if (e && e.name === 'AbortError') return; // el usuario canceló el menú
+        throw e;
+      }
     }
-    throw new Error('share no disponible');
+    // Fallback 1: el dispositivo no comparte archivos -> descargar el PNG.
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = nombreArchivo;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    showError('Tu dispositivo no permite compartir la imagen directamente: se descargó "' + nombreArchivo + '" para que la envíes por WhatsApp o la imprimas.');
   } catch (e) {
-    const tel = (c.telefono || v.telefono || '').replace(/\D/g, '');
-    const url = tel ? 'https://wa.me/52' + tel + '?text=' + encodeURIComponent(texto) : 'https://wa.me/?text=' + encodeURIComponent(texto);
-    window.open(url, '_blank');
+    if (e && e.name === 'AbortError') return;
+    // Fallback 2: la imagen no se pudo generar -> texto como antes.
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'Boutique de Lentes Yael', text: texto });
+        return;
+      }
+      throw new Error('share no disponible');
+    } catch (e2) {
+      if (e2 && e2.name === 'AbortError') return;
+      const tel = (c.telefono || v.telefono || '').replace(/\D/g, '');
+      const url = tel ? 'https://wa.me/52' + tel + '?text=' + encodeURIComponent(texto) : 'https://wa.me/?text=' + encodeURIComponent(texto);
+      window.open(url, '_blank');
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = etiquetaOriginal; }
   }
 }
 
@@ -1092,6 +1778,10 @@ function loadConfig() {
   state.token = localStorage.getItem(LS_TOKEN) || '';
   state.demo = localStorage.getItem(LS_DEMO) === '1';
   $('#modeBadge').hidden = !state.demo;
+  // Fase 5: la selección de trabajos para las hojas de órdenes persiste
+  // en este dispositivo mientras Alfredo arma la hoja.
+  try { state.ordenesSel = new Set(JSON.parse(localStorage.getItem(LS_ORDENES_SEL) || '[]')); }
+  catch (e) { state.ordenesSel = new Set(); }
 }
 function saveConfig(url, token, demoFlag) {
   if (demoFlag) {
@@ -1153,6 +1843,7 @@ function init() {
   });
   $$('input[name="tipoVenta"]').forEach(r => r.addEventListener('change', aplicarTipoVenta));
   $('#lcConArmazon').addEventListener('change', aplicarTipoVenta);
+  $('#lcSwitch').addEventListener('change', aplicarInterruptorLC);
   $('#lcTipo').addEventListener('change', actualizarMarcasLC);
   $('#lcMarca').addEventListener('change', actualizarMarcasLC);
   $('#lenteTratamiento').addEventListener('change', ev => { $('#filtroTonoWrap').hidden = ev.target.value !== 'Filtro color'; });
@@ -1172,6 +1863,13 @@ function init() {
   $('#btnLvBuscar').addEventListener('click', () => buscarClientes($('#lvBuscar').value.trim(), $('#lvResultados'), mostrarExpediente));
   // Pendientes / en proceso
   $('#btnMarcarEntregados').addEventListener('click', marcarEntregados);
+  $('#btnProcArmarHoja').addEventListener('click', () => show('ordenes'));
+  // Órdenes de trabajo (Fase 5): acumular etiquetas por proveedor
+  $('#btnOrdenesCargar').addEventListener('click', cargarOrdenes);
+  $('#btnOrdenesLimpiar').addEventListener('click', limpiarOrdenesSel);
+  // Ventas (Fase 2)
+  $('#btnVentasBuscar').addEventListener('click', cargarVentas);
+  $('#ventasBuscar').addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); cargarVentas(); } });
   // Resumen
   $('#btnResCargar').addEventListener('click', cargarResumen);
   $('#btnGasto').addEventListener('click', registrarGasto);
@@ -1185,11 +1883,23 @@ function init() {
   // Ficha de venta
   $('#btnAbono').addEventListener('click', registrarAbono);
   $('#btnCorregir').addEventListener('click', registrarCorreccion);
+  // Registrar abono (vista rápida del dashboard)
+  $('#btnAbFolio').addEventListener('click', buscarAbonoPorFolio);
+  $('#abFolio').addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); buscarAbonoPorFolio(); } });
+  $('#btnAbBuscar').addEventListener('click', buscarAbonoPorCliente);
+  $('#abBuscar').addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); buscarAbonoPorCliente(); } });
+  $('#btnAbGuardar').addEventListener('click', registrarAbonoRapido);
+  $('#btnAbLiquidar').addEventListener('click', () => {
+    if (state.abonoSaldo > 0) { $('#abConcepto').value = 'liquidación'; $('#abMonto').value = state.abonoSaldo.toFixed(2); $('#abMonto').focus(); }
+  });
+  $('#abConcepto').addEventListener('change', ev => {
+    if (ev.target.value === 'liquidación' && state.abonoSaldo > 0) $('#abMonto').value = state.abonoSaldo.toFixed(2);
+  });
   $$('#view-venta [data-doc]').forEach(b => b.addEventListener('click', () => abrirDoc(b.dataset.doc, state.currentVentaId)));
   $$('#view-lista-materiales [data-doc]').forEach(b => b.addEventListener('click', () => abrirDoc(b.dataset.doc, null)));
   // Documentos
-  $('#btnDocVolver').addEventListener('click', () => show(state.currentVentaId ? 'venta' : 'home'));
-  $('#btnDocImprimir').addEventListener('click', () => window.print());
+  $('#btnDocVolver').addEventListener('click', () => show((state.currentDoc && state.currentDoc.volverA) || (state.currentVentaId ? 'venta' : 'home')));
+  $('#btnDocImprimir').addEventListener('click', imprimirDoc);
   $('#btnDocCompartir').addEventListener('click', compartirDoc);
   // Valores iniciales del wizard
   aplicarTipoVenta();

@@ -62,21 +62,24 @@
   <section id="view-home" class="view" hidden>
     <h2>Panel principal</h2>
     <p class="subtitle">¿Qué quieres hacer hoy?</p>
-    <div class="dashboard-grid" id="dashboardGrid">
-      <button class="dash-card" data-nav="nueva-venta" type="button"><span class="dash-icon">＋</span><strong>Nueva venta</strong><small>Cliente, historia clínica y venta</small></button>
-      <button class="dash-card" data-nav="buscar-cliente" type="button"><span class="dash-icon">🔍</span><strong>Buscar cliente</strong><small>Por nombre, con sus documentos</small></button>
-      <button class="dash-card" data-nav="libro-visitas" type="button"><span class="dash-icon">📖</span><strong>Libro de visitas</strong><small>Expediente e historial por paciente</small></button>
-      <button class="dash-card" data-nav="pendientes" type="button"><span class="dash-icon">📦</span><strong>Pendientes</strong><small>Trabajos pendientes de entrega</small></button>
-      <button class="dash-card" data-nav="en-proceso" type="button"><span class="dash-icon">⚙️</span><strong>En proceso</strong><small>Trabajos en elaboración</small></button>
-      <button class="dash-card" data-nav="resumen" type="button"><span class="dash-icon">📊</span><strong>Resumen</strong><small>Ventas, gastos, fondo y corte de caja</small></button>
+    <div class="dashboard-grid dashboard-hero" id="dashboardGrid">
+      <button class="dash-card dash-hero-big" data-nav="nueva-venta" type="button"><span class="dash-icon">＋</span><strong>Nueva venta</strong><small>Cliente, historia clínica y venta</small></button>
+      <button class="dash-card dash-hero-buscar" data-nav="buscar-cliente" type="button"><span class="dash-icon">🔍</span><strong>Buscar cliente</strong><small>Por nombre, con sus documentos</small></button>
+      <button class="dash-card dash-hero-abono" data-nav="abono" type="button"><span class="dash-icon">💳</span><strong>Registrar abono</strong><small>Por folio de venta o por cliente</small></button>
     </div>
-    <div class="card">
-      <h3>Documentos</h3>
-      <p>Los 5 documentos se generan desde la ficha de cada venta o desde el Libro de visitas: historia clínica, orden de trabajo, ticket, comprobante de venta y lista de materiales.</p>
-      <div class="row">
-        <button class="btn btn-secondary" data-nav="lista-materiales" type="button">Lista de materiales</button>
-        <button class="btn btn-secondary" data-nav="catalogos" type="button">Catálogos (solo lectura)</button>
+    <div class="dash-secondary">
+      <span class="dash-secondary-title">Más secciones</span>
+      <div class="dash-links">
+        <button class="dash-link" data-nav="libro-visitas" type="button">📖 Libro de visitas</button>
+        <button class="dash-link" data-nav="pendientes" type="button">📦 Pendientes</button>
+        <button class="dash-link" data-nav="ventas" type="button">🛒 Ventas</button>
+        <button class="dash-link" data-nav="en-proceso" type="button">⚙️ En proceso</button>
+        <button class="dash-link" data-nav="ordenes" type="button">🏷️ Órdenes de trabajo</button>
+        <button class="dash-link" data-nav="resumen" type="button">📊 Resumen</button>
+        <button class="dash-link" data-nav="lista-materiales" type="button">🧾 Lista de materiales</button>
+        <button class="dash-link" data-nav="catalogos" type="button">📚 Catálogos</button>
       </div>
+      <p class="hint">Los 5 documentos se generan desde la ficha de cada venta o desde el Libro de visitas: historia clínica, orden de trabajo, ticket, comprobante de venta y lista de materiales.</p>
     </div>
     <p id="homeError" class="error" hidden></p>
   </section>
@@ -87,16 +90,16 @@
     <ol class="steps" id="wizardSteps">
       <li data-step="1" class="active">Cliente</li>
       <li data-step="2">Historia clínica</li>
-      <li data-step="3">Tipo de venta</li>
-      <li data-step="4">Lente / LC</li>
+      <li data-step="3">¿Qué se vende?</li>
+      <li data-step="4">Lente</li>
       <li data-step="5">Precios y pago</li>
-      <li data-step="6">Confirmación</li>
+      <li data-step="6">Revisar y guardar</li>
     </ol>
     <div id="wizardError" class="error" hidden></div>
 
     <div class="wizard-step" data-step-panel="1">
       <div class="card">
-        <h3>Paso 1 · Cliente</h3>
+        <h3>¿Quién es el cliente?</h3>
         <label>Buscar cliente existente por nombre
           <span class="row"><input type="search" id="nvBuscar" placeholder="Escribe el nombre…"><button class="btn btn-secondary" id="btnNvBuscar" type="button">Buscar</button></span>
         </label>
@@ -120,7 +123,7 @@
 
     <div class="wizard-step" data-step-panel="2" hidden>
       <div class="card">
-        <h3>Paso 2 · Historia clínica</h3>
+        <h3>Historia clínica</h3>
         <p class="hint">La graduación se escribe <strong>una sola vez</strong> aquí y se reutiliza en la orden de trabajo y en la lista de materiales.</p>
         <label>¿Usa lentes?
           <select id="hcUsaLentes"><option value="">—</option><option value="sí">Sí</option><option value="no">No</option></select>
@@ -175,7 +178,7 @@
 
     <div class="wizard-step" data-step-panel="3" hidden>
       <div class="card">
-        <h3>Paso 3 · Tipo de venta</h3>
+        <h3>¿Qué se vende?</h3>
         <div class="radio-cards" id="tipoVentaWrap">
           <label class="radio-card"><input type="radio" name="tipoVenta" value="lentes_completos" checked> <strong>Lentes completos</strong><small>Armazón + lente · incluye estuche y microfibra de obsequio</small></label>
           <label class="radio-card"><input type="radio" name="tipoVenta" value="rebisel"> <strong>Rebisel</strong><small>Adaptar las micas del cliente a un armazón nuevo</small></label>
@@ -204,6 +207,10 @@
           <label>Descripción<select id="accDesc"><option>Kit de limpieza</option><option>Cadena</option><option>Estuche duro</option></select></label>
           <label>Precio de venta $<input id="accPrecio" type="number" step="0.01" min="0"></label>
         </fieldset>
+        <label class="lc-switch" id="lcSwitchWrap" hidden>
+          <span><strong>Lente de contacto</strong><small>Actívalo solo si esta venta incluye lentes de contacto (caja de 6 · reemplazo mensual)</small></span>
+          <span class="switch"><input type="checkbox" id="lcSwitch"><span class="slider"></span></span>
+        </label>
         <fieldset id="fsLC" hidden>
           <legend>Lente de contacto</legend>
           <div class="grid2">
@@ -221,7 +228,7 @@
 
     <div class="wizard-step" data-step-panel="4" hidden>
       <div class="card">
-        <h3>Paso 4 · Lente</h3>
+        <h3>El lente</h3>
         <div id="fsLente">
           <div class="grid2">
             <label>Material del lente<select id="lenteMaterial"></select></label>
@@ -240,7 +247,7 @@
 
     <div class="wizard-step" data-step-panel="5" hidden>
       <div class="card">
-        <h3>Paso 5 · Precios y pago</h3>
+        <h3>Precios y pago</h3>
         <div class="grid2">
           <label>Precio definido armazón $<input id="pArmazon" type="number" step="0.01" min="0" readonly></label>
           <label>Precio definido lente / LC $<input id="pLente" type="number" step="0.01" min="0" readonly></label>
@@ -260,7 +267,7 @@
 
     <div class="wizard-step" data-step-panel="6" hidden>
       <div class="card">
-        <h3>Paso 6 · Confirmación y documentos</h3>
+        <h3>Revisa y guarda</h3>
         <div id="confirmResumen"></div>
         <div class="row">
           <button class="btn btn-primary" id="btnGuardarVenta" type="button">Guardar venta</button>
@@ -320,7 +327,41 @@
   <section id="view-en-proceso" class="view" hidden>
     <h2>En proceso</h2>
     <p class="subtitle">Trabajos en elaboración o pendientes de elaboración.</p>
+    <div class="row"><button class="btn btn-primary" id="btnProcArmarHoja" type="button">Armar hoja de órdenes</button></div>
     <div id="procList" class="list"></div>
+  </section>
+
+  <!-- Órdenes de trabajo (Fase 5): acumular etiquetas por proveedor -->
+  <section id="view-ordenes" class="view" hidden>
+    <h2>Órdenes de trabajo</h2>
+    <p class="subtitle">Selecciona trabajos de En proceso y Pendientes para armar hojas de etiquetas por proveedor (hasta 9 por hoja, formato carta). La selección se guarda en este dispositivo mientras armas la hoja.</p>
+    <div class="card">
+      <div class="row">
+        <button class="btn btn-primary" id="btnOrdenesCargar" type="button">Cargar trabajos</button>
+        <button class="btn btn-secondary" id="btnOrdenesLimpiar" type="button">Limpiar selección (<span id="ordenesSelCount">0</span>)</button>
+      </div>
+      <p id="ordenesMsg" class="hint">Selecciona trabajos con el check; cada trabajo aparece una sola vez en la hoja.</p>
+      <div id="ordenesList" class="list"></div>
+    </div>
+    <div class="card">
+      <h3>Hojas por proveedor</h3>
+      <p class="hint">Cada proveedor tiene su propia hoja (hasta 9 etiquetas). Los trabajos sin proveedor van en el grupo "Sin proveedor". Se puede imprimir la hoja aunque no sean 9 etiquetas.</p>
+      <div id="ordenesGrupos"></div>
+    </div>
+  </section>
+
+  <!-- Ventas (Fase 2) -->
+  <section id="view-ventas" class="view" hidden>
+    <h2>Ventas</h2>
+    <p class="subtitle">Últimas 50 ventas, de la más reciente a la más antigua. Busca por folio o por nombre del cliente.</p>
+    <div class="card">
+      <label>Buscar por folio o por cliente
+        <span class="row"><input type="search" id="ventasBuscar" placeholder="Ej. VTA-0001 o María…" autocomplete="off"><button class="btn btn-primary" id="btnVentasBuscar" type="button">Buscar</button></span>
+      </label>
+      <p id="ventasCount" class="hint"></p>
+      <div id="ventasList" class="list"></div>
+    </div>
+    <p id="ventasError" class="error" hidden></p>
   </section>
 
   <!-- Resumen -->
@@ -392,6 +433,39 @@
     </div>
   </section>
 
+  <!-- Registrar abono (flujo rápido) -->
+  <section id="view-abono" class="view" hidden>
+    <h2>Registrar abono</h2>
+    <p class="subtitle">Busca la venta por su folio o por el nombre del cliente y registra el pago.</p>
+    <div class="card">
+      <label>Buscar por folio de venta
+        <span class="row"><input type="search" id="abFolio" placeholder="Ej. VTA-0001" autocomplete="off"><button class="btn btn-primary" id="btnAbFolio" type="button">Buscar folio</button></span>
+      </label>
+      <hr>
+      <label>o buscar por nombre del cliente
+        <span class="row"><input type="search" id="abBuscar" placeholder="Escribe el nombre…" autocomplete="off"><button class="btn btn-primary" id="btnAbBuscar" type="button">Buscar cliente</button></span>
+      </label>
+      <div id="abResultados" class="list"></div>
+    </div>
+    <div id="abVentaBox" hidden>
+      <div class="card" id="abVentaCard"></div>
+      <div class="card">
+        <h3>Registrar el pago</h3>
+        <div class="grid2">
+          <label>Monto $ *<input id="abMonto" type="number" step="0.01" min="0" inputmode="decimal"></label>
+          <label>Método<select id="abMetodo"></select></label>
+          <label>Concepto<select id="abConcepto"><option value="abono">Abono</option><option value="liquidación">Liquidación</option></select></label>
+        </div>
+        <div class="row">
+          <button class="btn btn-primary" id="btnAbGuardar" type="button">Guardar abono</button>
+          <button class="btn btn-secondary" id="btnAbLiquidar" type="button">Liquidar saldo completo</button>
+        </div>
+        <p id="abMsg" class="success" hidden></p>
+      </div>
+    </div>
+    <p id="abError" class="error" hidden></p>
+  </section>
+
   <!-- Ficha de venta (abonos y correcciones) -->
   <section id="view-venta" class="view" hidden>
     <h2>Ficha de venta</h2>
@@ -433,7 +507,7 @@
     <div class="row doc-toolbar">
       <button class="btn btn-ghost" id="btnDocVolver" type="button">← Volver</button>
       <button class="btn btn-primary" id="btnDocImprimir" type="button">Imprimir / PDF</button>
-      <button class="btn btn-secondary" id="btnDocCompartir" type="button" hidden>Compartir por WhatsApp</button>
+      <button class="btn btn-secondary" id="btnDocCompartir" type="button" hidden>Compartir imagen</button>
     </div>
     <div id="docArea"></div>
   </section>
@@ -442,8 +516,24 @@
 </main>
 
 <footer class="app-footer">
-  <p>OPTICST NEXUS · Boutique de Lentes Yael · Sucursal Calle 4 · App instalada como PWA · Los datos viven en tu Google Sheet.</p>
+  <p>OPTICST NEXUS · Boutique de Lentes Yael · Sucursal Calle 4 · Calle 4 N° 342, Ciudad de México, 08100 · Tel. 5592405025 / 5611586976</p>
 </footer>
+
+<!-- Menú inferior fijo tipo Cashi: 3 ítems a cada lado del FAB central -->
+<nav class="bottom-nav" id="bottomNav" aria-label="Navegación principal" hidden>
+  <div class="nav-group">
+    <button class="nav-item" type="button" data-nav="home"><span class="nav-icon">🏠</span><span>Inicio</span></button>
+    <button class="nav-item" type="button" data-nav="pendientes"><span class="nav-icon">📦</span><span>Pendientes</span></button>
+    <button class="nav-item" type="button" data-nav="ventas"><span class="nav-icon">🛒</span><span>Ventas</span></button>
+  </div>
+  <div class="nav-spacer" aria-hidden="true"></div>
+  <div class="nav-group">
+    <button class="nav-item" type="button" data-nav="en-proceso"><span class="nav-icon">⚙️</span><span>En proceso</span></button>
+    <button class="nav-item" type="button" data-nav="lista-materiales"><span class="nav-icon">🧾</span><span>Materiales</span></button>
+    <button class="nav-item" type="button" data-nav="resumen"><span class="nav-icon">📊</span><span>Resumen</span></button>
+  </div>
+  <button class="nav-fab" type="button" data-nav="nueva-venta" aria-label="Nueva venta"><span class="nav-fab-circle">＋</span><span class="nav-fab-label">Nueva venta</span></button>
+</nav>
 
 <script src="app.js"></script>
 </body>
