@@ -50,6 +50,14 @@ p{margin:.4rem 0}
 .home-utils{display:flex;gap:.6rem;align-items:center;justify-content:flex-end;margin-top:.9rem}
 main{max-width:920px;margin:0 auto;padding:1rem 1rem 2rem}
 .view[hidden]{display:none}
+/* v2.3.4: animaciones sencillas — al entrar a una vista, el contenido
+   aparece con un suave deslizamiento; al tocar un botón, tarjeta o
+   ícono del menú, se encoge un poco (como si se hundiera). Todo en
+   CSS, sin librerías. Se respetan los ajustes de movimiento reducido
+   del teléfono. */
+@keyframes vistaEntra{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.view:not([hidden]){animation:vistaEntra .28s ease}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 /* Encabezados de sección consistentes: título + barra degradada de marca */
 .view>h2{font-size:1.5rem;margin:.2rem 0 .4rem}
 .view>h2::after{content:'';display:block;width:56px;height:4px;border-radius:4px;background:linear-gradient(90deg,#00E5FF,#2E7BFF,#A020FF);margin-top:.35rem}
@@ -61,7 +69,7 @@ input:focus,select:focus{outline:2px solid var(--purple);border-color:var(--purp
 input[readonly]{background:var(--purple-light)}
 /* ---------- Botones grandes tipo 3D (degradado + relieve + sombra) ---------- */
 .btn{border:0;border-radius:12px;padding:.7rem 1.15rem;min-height:48px;font-size:.98rem;font-weight:700;cursor:pointer;box-shadow:0 3px 0 rgba(36,31,49,.18);transition:transform .06s ease,box-shadow .06s ease,filter .15s ease}
-.btn:active{transform:translateY(3px);box-shadow:0 1px 0 rgba(36,31,49,.18)}
+.btn:active{transform:translateY(3px) scale(.97);box-shadow:0 1px 0 rgba(36,31,49,.18);filter:brightness(.96)}
 .btn-primary{background:var(--grad-brand);color:#fff;box-shadow:0 4px 0 #3d1a7a,0 8px 16px rgba(46,123,255,.35),inset 0 1px 0 rgba(255,255,255,.45)}
 .btn-primary:hover{filter:brightness(1.07)}
 .btn-primary:active{box-shadow:0 1px 0 #3d1a7a,0 3px 8px rgba(46,123,255,.3),inset 0 1px 0 rgba(255,255,255,.45)}
@@ -86,6 +94,7 @@ main .btn-ghost:active{box-shadow:0 1px 0 #d9cdf5}
 /* ---------- Dashboard: 3 acciones grandes + accesos secundarios ---------- */
 .dashboard-grid{display:grid;grid-template-columns:1fr;gap:.9rem;margin-bottom:1.1rem}
 .dash-card{border:0;border-radius:18px;padding:1.1rem 1rem;text-align:left;cursor:pointer;font-family:inherit;color:#fff;box-shadow:0 5px 0 rgba(10,15,31,.28),0 12px 22px rgba(46,123,255,.3),inset 0 1px 0 rgba(255,255,255,.45);transition:transform .06s ease,box-shadow .06s ease,filter .15s ease}
+.dash-card:active{transform:scale(.97);filter:brightness(1.05)}
 .dash-card:hover{filter:brightness(1.06)}
 .dash-card:active{transform:translateY(4px);box-shadow:0 1px 0 rgba(10,15,31,.28),0 4px 10px rgba(46,123,255,.3),inset 0 1px 0 rgba(255,255,255,.45)}
 .dash-card strong{display:block;font-size:1.2rem}
@@ -112,6 +121,7 @@ main .btn-ghost:active{box-shadow:0 1px 0 #d9cdf5}
 @media (min-width:700px){.dash-links{grid-template-columns:repeat(3,1fr)}}
 @media (min-width:1024px){.dash-links{grid-template-columns:repeat(6,1fr)}}
 .dash-link{background:#fff;border:1.5px solid var(--line);border-radius:12px;padding:.75rem .6rem;font-size:.92rem;font-weight:700;color:var(--purple-dark);cursor:pointer;font-family:inherit;text-align:center;box-shadow:0 2px 0 #e3ddf2;transition:transform .06s ease,box-shadow .06s ease}
+.dash-link:active{transform:scale(.95);box-shadow:0 1px 0 #e3ddf2}
 .dash-link:hover{border-color:var(--purple);box-shadow:0 2px 8px rgba(144,118,218,.25)}
 .dash-link:active{transform:translateY(2px);box-shadow:0 1px 0 #e3ddf2}
 
@@ -120,12 +130,14 @@ main .btn-ghost:active{box-shadow:0 1px 0 #d9cdf5}
 .bottom-nav[hidden]{display:none}
 .nav-group{flex:1;display:flex;justify-content:space-evenly;min-width:0}
 .nav-spacer{flex:0 0 78px}
-.nav-item{background:none;border:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;flex:1;min-width:0;font-size:.64rem;font-weight:700;color:var(--muted);padding:.3rem 0 .15rem;cursor:pointer;font-family:inherit}
+.nav-item{background:none;border:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;flex:1;min-width:0;font-size:.64rem;font-weight:700;color:var(--muted);padding:.3rem 0 .15rem;cursor:pointer;font-family:inherit;transition:transform .12s ease}
+.nav-item:active{transform:scale(.85)}
 .nav-item .nav-icon{font-size:1.35rem;line-height:1}
 .nav-item.active{color:var(--violet-pro)}
 .nav-item.active::after{content:'';width:22px;height:3px;border-radius:3px;background:linear-gradient(90deg,#00E5FF,#2E7BFF,#A020FF)}
 .nav-fab{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(12px + env(safe-area-inset-bottom));background:none;border:0;display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;font-family:inherit;padding:0}
-.nav-fab-circle{width:60px;height:60px;border-radius:50%;background:var(--grad-brand);color:#fff;font-size:2rem;line-height:52px;text-align:center;border:4px solid #fff;box-shadow:0 6px 16px rgba(46,123,255,.5),0 3px 0 rgba(10,15,31,.22),inset 0 1px 0 rgba(255,255,255,.45);transition:transform .06s ease}
+.nav-fab-circle{width:60px;height:60px;border-radius:50%;background:var(--grad-brand);color:#fff;font-size:2rem;line-height:52px;text-align:center;border:4px solid #fff;box-shadow:0 6px 16px rgba(46,123,255,.5),0 3px 0 rgba(10,15,31,.22),inset 0 1px 0 rgba(255,255,255,.45);transition:transform .12s ease}
+.nav-fab-circle:active{transform:scale(.88) rotate(90deg)}
 .nav-fab:active .nav-fab-circle{transform:translateY(2px)}
 .nav-fab-label{font-size:.64rem;font-weight:700;color:var(--muted)}
 .nav-fab.active .nav-fab-label{color:var(--violet-pro)}

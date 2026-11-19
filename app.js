@@ -1633,6 +1633,13 @@ async function abrirDoc(kind, ventaId, extra) {
   const builders = { historia: docHistoriaHTML, orden: docOrdenHTML, ticket: docTicketHTML, comprobante: docComprobanteHTML, materiales: docMaterialesHTML };
   $('#docArea').innerHTML = (builders[kind] || docHistoriaHTML)(data);
   state.currentDoc = { kind, venta: data.venta || null, cliente: data.cliente || null };
+  // v2.3.4: precargar los logos que usa el pintor de canvas para que al
+  // tocar Compartir ya estén en la caché del navegador y la imagen se
+  // genere sin esperar la descarga (el comprobante usa dos logos y es
+  // el que más tardaba).
+  if (kind === 'ticket' || kind === 'comprobante') {
+    (kind === 'ticket' ? ['logo-yael-circular-mono.png'] : ['logo-yael-contorno-blanco.png', 'logo-yael-circular.png']).forEach(s => { const im = new Image(); im.src = s; });
+  }
   aplicarTamanoPagina(kind); // el @page queda listo antes de imprimir
   const shareBtn = $('#btnDocCompartir');
   shareBtn.hidden = !(kind === 'ticket' || kind === 'comprobante');
@@ -1698,11 +1705,16 @@ function imprimirDoc() {
    pasadas: dibujar=false solo mide (para conocer el alto exacto antes
    de dimensionar el canvas), dibujar=true pinta. Se prueban en Node
    con un stub de ctx 2D que registra los fillText. */
+/* v2.3.4: con tiempo límite (8 s) — antes, si la descarga de un logo
+   se quedaba colgada, el await no resolvía nunca y el botón se quedaba
+   en "Generando imagen…" sin fallar ni avisar. Con el límite, el
+   documento se pinta sin ese logo y la imagen sí se genera. */
 function cargarImagen(src) {
   return new Promise((res, rej) => {
     const img = new Image();
-    img.onload = () => res(img);
-    img.onerror = () => rej(new Error('No se pudo cargar ' + src));
+    const to = setTimeout(() => rej(new Error('No se pudo cargar ' + src + ' (tiempo agotado)')), 8000);
+    img.onload = () => { clearTimeout(to); res(img); };
+    img.onerror = () => { clearTimeout(to); rej(new Error('No se pudo cargar ' + src)); };
     img.src = src;
   });
 }
@@ -2083,22 +2095,28 @@ async function compartirDoc() {
     }
     if (!blob) throw new Error('No se pudo generar la imagen: ' + (ultimoError && ultimoError.message ? ultimoError.message : 'error desconocido'));
     const archivo = new File([blob], nombreArchivo, { type: 'image/png' });
+    // v2.3.4: si el menú nativo falla, NO se cae al texto: se sigue al
+    // respaldo de descarga para que la imagen no se pierda (antes, un
+    // fallo del menú mandaba directo al texto por wa.me y el cliente
+    // nunca recibía la imagen).
+    let compartido = false;
     if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
       try {
         await navigator.share({ files: [archivo], title: 'Boutique de Lentes Yael — ' + tipoTxt + ' ' + (v.folio || ''), text: texto });
-        return;
+        compartido = true;
       } catch (e) {
         if (e && e.name === 'AbortError') return; // el usuario canceló el menú
-        throw new Error('No se pudo abrir el menú para compartir la imagen: ' + (e.message || e.name || e));
       }
     }
-    // Fallback 1: el dispositivo no comparte archivos -> descargar el PNG.
+    if (compartido) return;
+    // Fallback 1: el dispositivo no comparte archivos (o el menú falló)
+    // -> descargar el PNG para enviarlo desde Descargas por WhatsApp.
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = nombreArchivo;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
-    showError('Tu dispositivo no permite compartir la imagen directamente: se descargó "' + nombreArchivo + '" para que la envíes por WhatsApp o la imprimas.');
+    showError('No se pudo abrir el menú para compartir: se descargó "' + nombreArchivo + '" — envíalo desde Descargas por WhatsApp.');
   } catch (e) {
     if (e && e.name === 'AbortError') return;
     // v2.1: el error real se muestra en pantalla (12 s) en vez de caer
