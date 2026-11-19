@@ -219,12 +219,13 @@ code{background:var(--purple-light);padding:.1rem .3rem;border-radius:5px}
    tiene break-inside/page-break-inside avoid para que ninguna se corte
    entre páginas; si una hoja tiene más de 9 y se parte, cada hoja es
    su propio documento (.doc) y empieza en página nueva. La marca de
-   agua es el logo de Luna en su versión fuerte
-   (.doc-watermark-luna, logo-luna-fuerte.png): si no existe, el fondo
-   simplemente no se pinta (nunca imagen rota) y el contenido va por
-   encima (z-index) para que no tape el texto. */
+   agua es el logo de Luna en su versión fuerte, DENTRO de cada
+   etiqueta (.orden-label-wm, logo-luna-fuerte.png), centrada en el
+   recuadro de la tarjeta: si no existe, el fondo simplemente no se
+   pinta (nunca imagen rota) y el contenido va por encima (z-index)
+   para que no tape el texto. */
 .doc-orden{position:relative;overflow:hidden}
-.doc-orden>*:not(.doc-watermark){position:relative;z-index:1}
+.doc-orden>*{position:relative;z-index:1}
 /* v2.1: el logo de Luna en el encabezado no debe perderse: más grande
    (84px) y en una pastilla blanca con borde para que el trazo fino
    morado se vea firme sobre el fondo claro.
@@ -237,7 +238,19 @@ code{background:var(--purple-light);padding:.1rem .3rem;border-radius:5px}
 .orden-hoja-info{font-size:.9rem}
 .orden-label{min-height:2.4in}
 .doc-orden-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:.4rem;align-content:start}
-.orden-label{border:1.5px solid var(--ink);border-radius:6px;padding:.45rem;font-size:.78rem;background:#fff;break-inside:avoid;page-break-inside:avoid}
+.orden-label{border:1.5px solid var(--ink);border-radius:6px;padding:.45rem;font-size:.78rem;background:#fff;break-inside:avoid;page-break-inside:avoid;position:relative;overflow:hidden}
+/* v2.3.2: marca de agua DENTRO de la tarjeta (antes iba en la hoja y
+   quedaba hasta arriba, tapada por las tarjetas). Logo de Luna con sus
+   colores, centrado en el recuadro, detrás del texto de la etiqueta. */
+.orden-label-wm{position:absolute;inset:0;background-image:url(logo-luna-fuerte.png);background-repeat:no-repeat;background-position:center;background-size:min(200px,85%) auto;opacity:.28;pointer-events:none;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+.orden-label>*:not(.orden-label-wm){position:relative;z-index:1}
+/* v2.3.3: la marca debe leerse COMPLETA dentro de la tarjeta — el
+   encabezado de la tabla (th) tenía fondo lila opaco y tapaba justo
+   el centro del logo. Con fondo transparente la marca se ve entera
+   detrás del texto y de la tabla, sin estorbar (es pálida, .28) y sin
+   que nada la tape: si se corta la tarjeta, se entiende quién emite
+   la orden. */
+.orden-label table th,.orden-label table td{background:transparent}
 .orden-label h4{margin:0 0 .25rem;font-size:.85rem}
 .orden-label table{font-size:.72rem;margin:.2rem 0}
 .orden-label th,.orden-label td{padding:.15rem .25rem}
@@ -300,15 +313,6 @@ code{background:var(--purple-light);padding:.1rem .3rem;border-radius:5px}
    toca. */
 .doc-comprobante .banner-logo{width:140px;height:auto;flex:none}
 .doc-watermark{position:absolute;inset:0;z-index:0;background-image:url(logo-yael-circular.png);background-repeat:no-repeat;background-position:center;background-size:min(380px,80%) auto;opacity:.10;pointer-events:none;print-color-adjust:exact;-webkit-print-color-adjust:exact}
-/* v2.1: la marca de agua de la orden es el logo de Luna CON SUS COLORES
-   (morado + turquesa, nunca en gris). OJO: esta regla DEBE ir después de
-   .doc-watermark y con doble clase: antes .doc-watermark-luna (una sola
-   clase, línea ~214) perdía contra .doc-watermark por orden de aparición
-   y la orden mostraba el logo de Yael.
-   v2.3: versión fuerte (logo-luna-fuerte.png) y opacidad .14 → .22
-   para que el logo se reconozca claramente en color sin tapar el
-   texto. */
-.doc-watermark.doc-watermark-luna{background-image:url(logo-luna-fuerte.png);background-size:min(460px,88%) auto;opacity:.28}
 .doc-comprobante>*:not(.doc-watermark){position:relative;z-index:1}
 .doc-comprobante .garantias{font-size:.85rem;background:var(--purple-light);border-radius:8px;padding:.6rem .8rem}
 
@@ -317,7 +321,7 @@ code{background:var(--purple-light);padding:.1rem .3rem;border-radius:5px}
    app (sin ellos el PDF salía con otro diseño). El tamaño de página
    (@page) lo inyecta app.js según el documento actual (ver
    aplicarTamanoPagina); aquí solo se fija el comportamiento de color. */
-html,body,.doc,.doc-comprobante .banner-top,.doc-watermark,.doc-comprobante .garantias,.doc th,.doc .total-row td{print-color-adjust:exact;-webkit-print-color-adjust:exact}
+html,body,.doc,.doc-comprobante .banner-top,.doc-watermark,.orden-label-wm,.doc-comprobante .garantias,.doc th,.doc .total-row td{print-color-adjust:exact;-webkit-print-color-adjust:exact}
 @media print{
   body{background:#fff}
   .app-footer,.doc-toolbar,.wizard-nav,.btn,.bottom-nav{display:none!important}
@@ -342,5 +346,5 @@ html,body,.doc,.doc-comprobante .banner-top,.doc-watermark,.doc-comprobante .gar
   .doc-comprobante .garantias{padding:.4rem .6rem;break-inside:avoid;page-break-inside:avoid}
   .doc-comprobante .sig{margin-top:1rem;break-inside:avoid;page-break-inside:avoid}
   /* La marca de agua y el degradado del banner también se imprimen. */
-  .doc-comprobante .banner-top,.doc-watermark,.doc-comprobante .garantias,.doc th,.doc .total-row td{print-color-adjust:exact;-webkit-print-color-adjust:exact}
+  .doc-comprobante .banner-top,.doc-watermark,.orden-label-wm,.doc-comprobante .garantias,.doc th,.doc .total-row td{print-color-adjust:exact;-webkit-print-color-adjust:exact}
 }

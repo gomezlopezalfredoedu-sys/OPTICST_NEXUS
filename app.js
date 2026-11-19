@@ -89,6 +89,19 @@ function showOk(msg, el) {
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
+/* Formato de graduación (v2.3.3): Esf, Cil y Add SIEMPRE con 2
+   decimales y signo (+2.50, -2.00, -0.75, 0.00) — así se escribe la
+   graduación y la lensometría, y así aparece en la historia clínica,
+   la orden de trabajo y la lista de materiales. El Eje NO lleva
+   decimales (es un entero 0-180) y se muestra tal cual, sin formatear.
+   Valores vacíos → '—'. Idempotente: '-2.00' o '+2.50' quedan igual. */
+function fmtGrad(v) {
+  if (v === null || v === undefined || String(v).trim() === '') return '—';
+  const n = Number(v);
+  if (isNaN(n)) return String(v);
+  if (n === 0) return '0.00';
+  return (n > 0 ? '+' : '') + n.toFixed(2);
+}
 
 /* ---------- Rangos de graduación (según contrato; se usan solo si el backend no devuelve listas) ---------- */
 function rangoEsfera() { const v = []; for (let x = -20; x <= 10.0001; x += 0.5) v.push(x.toFixed(2)); return v; }
@@ -360,28 +373,31 @@ function lista(nombre) {
   }
   return FALLBACK_LISTAS[nombre] || [];
 }
-function fillSelect(el, values, placeholder) {
+function fillSelect(el, values, placeholder, fmtEtiqueta) {
   if (!el) return;
   const cur = el.value;
   el.innerHTML = '';
   if (placeholder) { const o = document.createElement('option'); o.value = ''; o.textContent = placeholder; el.appendChild(o); }
   (values || []).forEach(v => {
     const o = document.createElement('option');
-    o.value = String(v); o.textContent = String(v);
+    // fmtEtiqueta formatea solo la etiqueta que se ve (el valor que se
+    // guarda queda tal cual): así los dropdowns de graduación muestran
+    // -2.00 / +2.50 aunque el Sheet devuelva el número -2 o 2.5.
+    o.value = String(v); o.textContent = fmtEtiqueta ? fmtEtiqueta(v) : String(v);
     el.appendChild(o);
   });
   if (cur && Array.from(el.options).some(o => o.value === cur)) el.value = cur;
 }
 function fillRxSelects() {
   const esf = lista('Esfera'), cil = lista('Cilindro'), eje = lista('Eje'), add = lista('Add');
-  $$('.lens-esf-od, .lens-esf-oi').forEach(s => fillSelect(s, esf, 'Esf'));
-  $$('.lens-cil-od, .lens-cil-oi').forEach(s => fillSelect(s, cil, 'Cil'));
+  $$('.lens-esf-od, .lens-esf-oi').forEach(s => fillSelect(s, esf, 'Esf', fmtGrad));
+  $$('.lens-cil-od, .lens-cil-oi').forEach(s => fillSelect(s, cil, 'Cil', fmtGrad));
   $$('.lens-eje-od, .lens-eje-oi').forEach(s => fillSelect(s, eje, 'Eje'));
-  ['#gradEsfOd', '#gradEsfOi'].forEach(s => fillSelect($(s), esf, 'Esf'));
-  ['#gradCilOd', '#gradCilOi'].forEach(s => fillSelect($(s), cil, 'Cil'));
+  ['#gradEsfOd', '#gradEsfOi'].forEach(s => fillSelect($(s), esf, 'Esf', fmtGrad));
+  ['#gradCilOd', '#gradCilOi'].forEach(s => fillSelect($(s), cil, 'Cil', fmtGrad));
   ['#gradEjeOd', '#gradEjeOi'].forEach(s => fillSelect($(s), eje, 'Eje'));
-  fillSelect($('#lensAdd'), add, 'Add');
-  fillSelect($('#gradAdd'), add, 'Add');
+  fillSelect($('#lensAdd'), add, 'Add', fmtGrad);
+  fillSelect($('#gradAdd'), add, 'Add', fmtGrad);
 }
 function fillCatalogSelects() {
   fillSelect($('#armMaterial'), lista('Material_Armazon'), '—');
@@ -495,7 +511,7 @@ async function buscarClienteNv() {
   const q = $('#nvBuscar').value.trim();
   if (!q) return;
   try {
-    const res = await api('buscarCliente', { q });
+    const res = await buscarClienteAPI(q);
     const box = $('#nvResultados');
     box.innerHTML = res.length ? '' : '<p class="hint">Sin resultados. Crea el cliente nuevo abajo.</p>';
     res.forEach(c => {
@@ -632,9 +648,9 @@ function renderConfirmacion() {
     '<table><tr><th>Cliente</th><td>' + esc(c ? c.nombre : '—') + '</td></tr>' +
     '<tr><th>Tipo de venta</th><td>' + esc(tipoTxt) + '</td></tr>' +
     (state.wizard.llevaLC ? '<tr><th>Lente de contacto</th><td>' + esc($('#lcTipo').value) + ' · ' + esc($('#lcMarca').value || '') + ' (caja de 6) · ' + money($('#lcPrecio').value || 0) + '</td></tr>' : '') +
-    '<tr><th>Graduación OD</th><td>Esf ' + esc(h.gradEsfOD || '—') + ' · Cil ' + esc(h.gradCilOD || '—') + ' · Eje ' + esc(h.gradEjeOD || '—') + '</td></tr>' +
-    '<tr><th>Graduación OI</th><td>Esf ' + esc(h.gradEsfOI || '—') + ' · Cil ' + esc(h.gradCilOI || '—') + ' · Eje ' + esc(h.gradEjeOI || '—') + '</td></tr>' +
-    '<tr><th>Add / DNP</th><td>' + esc(h.gradAdd || '—') + ' / ' + esc(h.dnp || '—') + '</td></tr>' +
+    '<tr><th>Graduación OD</th><td>Esf ' + esc(fmtGrad(h.gradEsfOD)) + ' · Cil ' + esc(fmtGrad(h.gradCilOD)) + ' · Eje ' + esc(h.gradEjeOD || '—') + '</td></tr>' +
+    '<tr><th>Graduación OI</th><td>Esf ' + esc(fmtGrad(h.gradEsfOI)) + ' · Cil ' + esc(fmtGrad(h.gradCilOI)) + ' · Eje ' + esc(h.gradEjeOI || '—') + '</td></tr>' +
+    '<tr><th>Add / DNP</th><td>' + esc(fmtGrad(h.gradAdd)) + ' / ' + esc(h.dnp || '—') + '</td></tr>' +
     '<tr><th>Precio definido</th><td>' + money(d.total) + '</td></tr>' +
     '<tr><th>Total manual</th><td>' + money(manual) + '</td></tr>' +
     '<tr><th>Descuento</th><td>' + money(d.total - manual) + '</td></tr>' +
@@ -700,10 +716,29 @@ async function guardarVenta() {
 function clienteItemHTML(c) {
   return '<strong>' + esc(c.nombre) + '</strong><small>' + esc(c.id || '') + ' · ' + esc(c.telefono || '') + (c.edad ? ' · ' + c.edad + ' años' : '') + '</small>';
 }
+/* Búsqueda de clientes con respaldo local (v2.3.2): el backend
+   `buscarCliente` tenía un bug — filtraba por `c.Nombre` pero paraJson
+   entrega la clave en minúscula (`nombre`), así que siempre devolvía
+   vacío y Buscar cliente / Libro de visitas decían "Sin resultados".
+   La corrección del backend (Code.gs) requiere redesplegar; mientras
+   tanto, si la búsqueda no trae nada se piden los primeros 50 clientes
+   y se filtran aquí mismo, así la búsqueda funciona solo con subir la
+   PWA a GitHub. */
+const normTxt = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+async function buscarClienteAPI(q) {
+  q = (q || '').trim();
+  let res = await api('buscarCliente', { q });
+  if ((!res || !res.length) && q) {
+    const todos = await api('buscarCliente', { q: '' });
+    const nq = normTxt(q);
+    res = (todos || []).filter(c => normTxt(c.nombre).includes(nq));
+  }
+  return res || [];
+}
 async function buscarClientes(q, boxEl, onPick) {
   if (!q) return;
   try {
-    const res = await api('buscarCliente', { q });
+    const res = await buscarClienteAPI(q);
     boxEl.innerHTML = res.length ? '' : '<p class="hint">Sin resultados.</p>';
     res.forEach(c => {
       const d = document.createElement('div');
@@ -780,7 +815,7 @@ async function mostrarFichaCliente(c) {
     box.innerHTML = '<div class="card"><h3>' + esc(d.cliente.nombre) + '</h3>' +
       '<p>' + esc(d.cliente.id || '') + ' · ' + esc(d.cliente.telefono || '') + ' · ' + esc(d.cliente.ocupacion || '') + ' · ' + esc(d.cliente.sexo || '') + '</p>' + prox +
       '<h4>Historias clínicas (' + d.historias.length + ')</h4>' +
-      (d.historias.map(h => '<p><small>' + fechaMX(h.fecha) + ' — Grad. OD Esf ' + esc(h.gradEsfOD || h.grad_esf_od || '—') + ' / OI Esf ' + esc(h.gradEsfOI || h.grad_esf_oi || '—') + ' — ' + esc(h.diagnostico || h.Diagnostico || '') + '</small></p>').join('') || '<p class="hint">Sin historias registradas.</p>') +
+      (d.historias.map(h => '<p><small>' + fechaMX(h.fecha) + ' — Grad. OD Esf ' + esc(fmtGrad(h.gradEsfOD || h.grad_esf_od)) + ' / OI Esf ' + esc(fmtGrad(h.gradEsfOI || h.grad_esf_oi)) + ' — ' + esc(h.diagnostico || h.Diagnostico || '') + '</small></p>').join('') || '<p class="hint">Sin historias registradas.</p>') +
       '<h4>Ventas (' + d.ventas.length + ')</h4><div class="list">' + (d.ventas.map(ventaResumenHTML).join('') || '<p class="hint">Sin ventas.</p>') + '</div></div>';
     wireVentaButtons(box);
   } catch (e) { showError('No se pudo cargar la ficha: ' + e.message); }
@@ -792,7 +827,7 @@ async function mostrarExpediente(c) {
     box.innerHTML = '<div class="card"><h3>Expediente · ' + esc(d.cliente.nombre) + '</h3>' +
       '<p>' + esc(d.cliente.id || '') + ' · Nac. ' + fechaMX(d.cliente.fechaNac) + ' (' + esc(String(d.cliente.edad || '')) + ' años) · ' + esc(d.cliente.telefono || '') + '</p>' +
       '<h4>Visitas e historial de graduación</h4>' +
-      (d.historias.map(h => '<div class="list-item"><strong>' + fechaMX(h.fecha) + '</strong><small>Graduación OD: Esf ' + esc(h.gradEsfOD || '—') + ' Cil ' + esc(h.gradCilOD || '—') + ' Eje ' + esc(h.gradEjeOD || '—') + ' · OI: Esf ' + esc(h.gradEsfOI || '—') + ' Cil ' + esc(h.gradCilOI || '—') + ' Eje ' + esc(h.gradEjeOI || '—') + ' · Add ' + esc(h.gradAdd || '—') + ' · DNP ' + esc(h.dnp || '—') + '</small><small>Diagnóstico: ' + esc(h.diagnostico || '') + ' · Recomendación: ' + esc(h.recomendacion || '') + '</small><div class="row"><button class="btn btn-secondary" type="button" data-doc-historia="' + esc(h.id || '') + '">Ver historia clínica</button></div></div>').join('') || '<p class="hint">Sin visitas registradas.</p>') +
+      (d.historias.map(h => '<div class="list-item"><strong>' + fechaMX(h.fecha) + '</strong><small>Graduación OD: Esf ' + esc(fmtGrad(h.gradEsfOD)) + ' Cil ' + esc(fmtGrad(h.gradCilOD)) + ' Eje ' + esc(h.gradEjeOD || '—') + ' · OI: Esf ' + esc(fmtGrad(h.gradEsfOI)) + ' Cil ' + esc(fmtGrad(h.gradCilOI)) + ' Eje ' + esc(h.gradEjeOI || '—') + ' · Add ' + esc(fmtGrad(h.gradAdd)) + ' · DNP ' + esc(h.dnp || '—') + '</small><small>Diagnóstico: ' + esc(h.diagnostico || '') + ' · Recomendación: ' + esc(h.recomendacion || '') + '</small><div class="row"><button class="btn btn-secondary" type="button" data-doc-historia="' + esc(h.id || '') + '">Ver historia clínica</button></div></div>').join('') || '<p class="hint">Sin visitas registradas.</p>') +
       '<h4>Ventas</h4><div class="list">' + (d.ventas.map(ventaResumenHTML).join('') || '<p class="hint">Sin ventas.</p>') + '</div></div>';
     wireVentaButtons(box);
     $$('[data-doc-historia]', box).forEach(b => b.onclick = () => abrirDoc('historia', null, { historiaId: b.dataset.docHistoria, clienteId: c.id }));
@@ -816,7 +851,7 @@ async function cargarPendientes() {
       const v = t.venta || {};
       const d = document.createElement('div');
       d.className = 'list-item';
-      const tel = (v.telefono || t.telefono || '').replace(/\D/g, '');
+      const tel = String(v.telefono || t.telefono || '').replace(/\D/g, '');
       d.innerHTML = '<label class="check"><input type="checkbox" data-pend="' + esc(t.ventaId) + '"> <strong>' + esc(v.folio || t.ventaId) + '</strong> · ' + esc(v.clienteNombre || t.clienteNombre || '') + '</label>' +
         '<div class="venta-lineas">' + (queComproHTML(v) || '<small>' + esc(tipoVentaTexto(v.tipoVenta)) + '</small>') + '</div>' +
         '<div class="venta-lineas"><small>Total ' + money(v.totalManual) + ' · Pagado ' + money(v.aCuenta) + ' · Saldo ' + money(v.saldo) + '</small>' + metodosChipsHTML(v) + '</div>' +
@@ -1141,7 +1176,7 @@ async function cargarMateriales() {
     const d = await api('getListaMateriales');
     state.materialesCache = d;
     box.innerHTML = '<h3>Micas pendientes</h3>' +
-      ((d.micas || []).map(m => '<p><small><strong>' + esc(m.folio || '') + '</strong> · ' + esc(m.cliente || '') + ' · ' + esc(m.material || '') + ' ' + esc(m.diseno || '') + ' ' + esc(m.tratamiento || '') + ' · Prov. ' + esc(m.proveedor || '') + ' · Grad. OD Esf ' + esc((m.graduacion && m.graduacion.esfOD) || '—') + ' / OI Esf ' + esc((m.graduacion && m.graduacion.esfOI) || '—') + '</small></p>').join('') || '<p class="hint">Sin micas pendientes.</p>') +
+      ((d.micas || []).map(m => '<p><small><strong>' + esc(m.folio || '') + '</strong> · ' + esc(m.cliente || '') + ' · ' + esc(m.material || '') + ' ' + esc(m.diseno || '') + ' ' + esc(m.tratamiento || '') + ' · Prov. ' + esc(m.proveedor || '') + ' · Grad. OD Esf ' + esc(fmtGrad(m.graduacion && m.graduacion.esfOD)) + ' / OI Esf ' + esc(fmtGrad(m.graduacion && m.graduacion.esfOI)) + '</small></p>').join('') || '<p class="hint">Sin micas pendientes.</p>') +
       '<h3>Armazones pendientes (otra hoja)</h3>' +
       ((d.armazones || []).map(a => '<p><small><strong>' + esc(a.folio || '') + '</strong> · ' + esc(a.cliente || '') + ' · ' + esc(a.material || '') + ' ' + esc(a.diseno || '') + ' · ' + esc(a.modelo || '') + ' ' + esc(a.marca || '') + ' · Color ' + esc(a.color || '') + '</small></p>').join('') || '<p class="hint">Sin armazones pendientes.</p>');
   } catch (e) { box.innerHTML = ''; showError('No se pudo cargar la lista de materiales: ' + e.message); }
@@ -1179,7 +1214,7 @@ async function abrirFichaVenta(ventaId) {
       '<tr class="total-row"><th>Saldo</th><td>' + money(v.saldo) + '</td></tr></table>' +
       '<h4>Pagos</h4>' + (v.pagos.map(pagoLineaHTML).join('') || '<p class="hint">Sin pagos registrados.</p>') +
       (metodosChipsHTML(v) ? '<p>' + metodosChipsHTML(v) + '</p>' : '') +
-      '<p><small>Graduación (solo informativa): OD Esf ' + esc((v.graduacion && v.graduacion.esfOD) || '—') + ' · OI Esf ' + esc((v.graduacion && v.graduacion.esfOI) || '—') + '</small></p></div>';
+      '<p><small>Graduación (solo informativa): OD Esf ' + esc(fmtGrad(v.graduacion && v.graduacion.esfOD)) + ' · OI Esf ' + esc(fmtGrad(v.graduacion && v.graduacion.esfOI)) + '</small></p></div>';
     show('venta');
   } catch (e) { showError('No se pudo abrir la ficha: ' + e.message); }
 }
@@ -1234,7 +1269,7 @@ async function buscarAbonoPorCliente() {
   const q = $('#abBuscar').value.trim();
   if (!q) return;
   try {
-    const res = await api('buscarCliente', { q });
+    const res = await buscarClienteAPI(q);
     const box = $('#abResultados');
     box.innerHTML = res.length ? '' : '<p class="hint">Sin resultados.</p>';
     res.forEach(c => {
@@ -1381,9 +1416,9 @@ function historiaSinGraduacion(h) {
 function rxTabla(g) {
   g = g || {};
   return '<table class="rx-table"><tr><th></th><th>Esf</th><th>Cil</th><th>Eje</th></tr>' +
-    '<tr><td>O.D.</td><td>' + esc(g.esfOD || '—') + '</td><td>' + esc(g.cilOD || '—') + '</td><td>' + esc(g.ejeOD || '—') + '</td></tr>' +
-    '<tr><td>O.I.</td><td>' + esc(g.esfOI || '—') + '</td><td>' + esc(g.cilOI || '—') + '</td><td>' + esc(g.ejeOI || '—') + '</td></tr></table>' +
-    '<p>Add: ' + esc(g.add || '—') + ' · DNP: ' + esc(g.dnp || '—') + '</p>';
+    '<tr><td>O.D.</td><td>' + esc(fmtGrad(g.esfOD)) + '</td><td>' + esc(fmtGrad(g.cilOD)) + '</td><td>' + esc(g.ejeOD || '—') + '</td></tr>' +
+    '<tr><td>O.I.</td><td>' + esc(fmtGrad(g.esfOI)) + '</td><td>' + esc(fmtGrad(g.cilOI)) + '</td><td>' + esc(g.ejeOI || '—') + '</td></tr></table>' +
+    '<p>Add: ' + esc(fmtGrad(g.add)) + ' · DNP: ' + esc(g.dnp || '—') + '</p>';
 }
 function docHistoriaHTML(d) {
   const v = d.venta || {}, c = d.cliente || {}, h = d.historia || v.historia || {};
@@ -1431,10 +1466,10 @@ function ordenEtiquetaHTML(d) {
   const rx = sinGrad
     ? '<div class="orden-sin-grad">⚠ Graduación no registrada — captúrala en la historia clínica</div>'
     : '<table><tr><th></th><th>Esf</th><th>Cil</th><th>Eje</th></tr>' +
-      '<tr><td>O.D.</td><td>' + esc(g.esfOD || '—') + '</td><td>' + esc(g.cilOD || '—') + '</td><td>' + esc(g.ejeOD || '—') + '</td></tr>' +
-      '<tr><td>O.I.</td><td>' + esc(g.esfOI || '—') + '</td><td>' + esc(g.cilOI || '—') + '</td><td>' + esc(g.ejeOI || '—') + '</td></tr></table>' +
-      '<div>Add ' + esc(g.add || '—') + ' · DNP ' + esc(g.dnp || '—') + '</div>';
-  return '<div class="orden-label"><h4>' + esc(LABORATORIO.nombre) + ' · ' + esc(v.folio || v.id || '') + '</h4>' +
+      '<tr><td>O.D.</td><td>' + esc(fmtGrad(g.esfOD)) + '</td><td>' + esc(fmtGrad(g.cilOD)) + '</td><td>' + esc(g.ejeOD || '—') + '</td></tr>' +
+      '<tr><td>O.I.</td><td>' + esc(fmtGrad(g.esfOI)) + '</td><td>' + esc(fmtGrad(g.cilOI)) + '</td><td>' + esc(g.ejeOI || '—') + '</td></tr></table>' +
+      '<div>Add ' + esc(fmtGrad(g.add)) + ' · DNP ' + esc(g.dnp || '—') + '</div>';
+  return '<div class="orden-label"><div class="orden-label-wm" aria-hidden="true"></div><h4>' + esc(LABORATORIO.nombre) + ' · ' + esc(v.folio || v.id || '') + '</h4>' +
     '<div>' + esc(c.nombre || v.clienteNombre || '') + ' · ' + fechaMX(v.fecha) + ' · ' + esc(String(c.edad || '')) + ' años</div>' +
     rx +
     '<div>Diseño: ' + esc(v.lenteDiseno || v.lcTipo || '') + ' · Material: ' + esc(v.lenteMaterial || '') + '</div>' +
@@ -1443,10 +1478,10 @@ function ordenEtiquetaHTML(d) {
 }
 /* Una hoja de órdenes: hasta 9 etiquetas (3×3) de UN solo proveedor,
    formato carta (el @page letter lo pone aplicarTamanoPagina('orden')).
-   La marca de agua es el logo de Luna en su versión fuerte
-   (.doc-watermark-luna, logo-luna-fuerte.png); si no existe, el fondo
-   simplemente no se pinta y la hoja queda sin marca de agua (nunca
-   imagen rota: es fondo CSS, no <img>).
+   La marca de agua es el logo de Luna en su versión fuerte, DENTRO de
+   cada etiqueta (.orden-label-wm, ver styles.css), centrada en el
+   recuadro de la tarjeta — antes iba en la hoja (.doc-watermark-luna)
+   y quedaba hasta arriba, tapada por las tarjetas.
    El compartir como imagen NO se habilita para órdenes (hoy solo
    ticket y comprobante tienen el botón). */
 function docOrdenHojaHTML(datos, proveedor, hojaNum, totalHojas) {
@@ -1457,7 +1492,6 @@ function docOrdenHojaHTML(datos, proveedor, hojaNum, totalHojas) {
     .filter(x => graduacionVacia(graduacionDe(x)))
     .map(x => (x.venta && (x.venta.folio || x.venta.id)) || '');
   return '<div class="doc doc-orden">' +
-    '<div class="doc-watermark doc-watermark-luna" aria-hidden="true"></div>' +
     docOrdenHeadHTML() +
     '<p class="orden-hoja-info"><strong>Proveedor: ' + esc(proveedor || SIN_PROVEEDOR) + '</strong> · Hoja ' + hojaNum + ' de ' + totalHojas + ' · ' + datos.length + ' etiqueta' + (datos.length === 1 ? '' : 's') + ' (de 1 a 9 por hoja)</p>' +
     (sinGradFolios.length ? '<p class="error doc-orden-aviso"><strong>⚠ Graduación no registrada</strong> en: ' + esc(sinGradFolios.join(', ')) + '. Captúrala en la historia clínica antes de mandar el trabajo al laboratorio.</p>' : '') +
@@ -1572,7 +1606,7 @@ function docMaterialesHTML(d) {
   return '<div class="doc">' + docHead('Lista de materiales') +
     '<h3>Micas pendientes de realizar</h3>' +
     (micas.length ? '<table><tr><th>Folio</th><th>Cliente</th><th>Graduación OD / OI</th><th>Material</th><th>Diseño</th><th>Tratamiento</th><th>Proveedor</th></tr>' +
-      micas.map(m => '<tr><td>' + esc(m.folio || '') + '</td><td>' + esc(m.cliente || '') + '</td><td>OD Esf ' + esc((m.graduacion && m.graduacion.esfOD) || '—') + ' Cil ' + esc((m.graduacion && m.graduacion.cilOD) || '—') + ' Eje ' + esc((m.graduacion && m.graduacion.ejeOD) || '—') + '<br>OI Esf ' + esc((m.graduacion && m.graduacion.esfOI) || '—') + ' Cil ' + esc((m.graduacion && m.graduacion.cilOI) || '—') + ' Eje ' + esc((m.graduacion && m.graduacion.ejeOI) || '—') + '</td><td>' + esc(m.material || '') + '</td><td>' + esc(m.diseno || '') + '</td><td>' + esc(m.tratamiento || '') + '</td><td>' + esc(m.proveedor || '') + '</td></tr>').join('') + '</table>' : '<p class="hint">Sin micas pendientes.</p>') +
+      micas.map(m => '<tr><td>' + esc(m.folio || '') + '</td><td>' + esc(m.cliente || '') + '</td><td>OD Esf ' + esc(fmtGrad(m.graduacion && m.graduacion.esfOD)) + ' Cil ' + esc(fmtGrad(m.graduacion && m.graduacion.cilOD)) + ' Eje ' + esc((m.graduacion && m.graduacion.ejeOD) || '—') + '<br>OI Esf ' + esc(fmtGrad(m.graduacion && m.graduacion.esfOI)) + ' Cil ' + esc(fmtGrad(m.graduacion && m.graduacion.cilOI)) + ' Eje ' + esc((m.graduacion && m.graduacion.ejeOI) || '—') + '</td><td>' + esc(m.material || '') + '</td><td>' + esc(m.diseno || '') + '</td><td>' + esc(m.tratamiento || '') + '</td><td>' + esc(m.proveedor || '') + '</td></tr>').join('') + '</table>' : '<p class="hint">Sin micas pendientes.</p>') +
     '<h3 style="page-break-before:always">Armazones pendientes (otra hoja)</h3>' +
     (armazones.length ? '<table><tr><th>Folio</th><th>Cliente</th><th>Material</th><th>Diseño</th><th>Modelo</th><th>Marca</th><th>Color</th></tr>' +
       armazones.map(a => '<tr><td>' + esc(a.folio || '') + '</td><td>' + esc(a.cliente || '') + '</td><td>' + esc(a.material || '') + '</td><td>' + esc(a.diseno || '') + '</td><td>' + esc(a.modelo || '') + '</td><td>' + esc(a.marca || '') + '</td><td>' + esc(a.color || '') + '</td></tr>').join('') + '</table>' : '<p class="hint">Sin armazones pendientes.</p>') + '</div>';
@@ -2009,6 +2043,12 @@ async function generarImagenDocumento(doc, escala) {
   // Cambiar width/height resetea el contexto: se repone la escala
   // (las coordenadas de los pintores son en px CSS).
   ctx.scale(k, k);
+  // v2.3.2: fondo blanco opaco ANTES de pintar — el canvas nace
+  // transparente y WhatsApp muestra lo transparente como negro, así que
+  // el cliente recibía la imagen en negro. Con el fondo blanco el PNG
+  // se ve igual que el documento en la app.
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, dims.ancho / k, dims.alto / k);
   try { pintar(ctx, doc, logo, k, true, marca, dims.alto / k); }
   catch (e) { throw new Error('al dibujar el documento: ' + e.message); }
   const png = await new Promise((res, rej) => canvas.toBlob(
@@ -2074,7 +2114,7 @@ async function compartirDoc() {
       throw new Error('share no disponible');
     } catch (e2) {
       if (e2 && e2.name === 'AbortError') return;
-      const tel = (c.telefono || v.telefono || '').replace(/\D/g, '');
+      const tel = String(c.telefono || v.telefono || '').replace(/\D/g, '');
       const url = tel ? 'https://wa.me/52' + tel + '?text=' + encodeURIComponent(texto) : 'https://wa.me/?text=' + encodeURIComponent(texto);
       window.open(url, '_blank');
     }
