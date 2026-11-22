@@ -1600,8 +1600,7 @@ function docComprobanteHTML(d) {
     '<tr><td>Anticipo / A cuenta</td><td></td><td>' + money(v.aCuenta) + '</td></tr>' +
     '<tr><td>Saldo</td><td></td><td>' + money(v.saldo) + '</td></tr></table></div>' +
     '<p><strong>Cantidad total en palabras:</strong> ' + esc(numeroALetras(v.totalManual)) + ' MXN.</p>' +
-    '<div class="garantias"><strong>Garantías:</strong> ' + esc(GARANTIAS.adaptacion) + ' · ' + esc(GARANTIAS.armazon) + ' · ' + esc(GARANTIAS.tratamiento) + '.<br><strong>Próxima visita:</strong> ' + prox.toLocaleDateString('es-MX') + ' (10 meses).</div>' +
-    '<div class="sig"><div>Firma del cliente</div><div>Boutique de Lentes Yael</div></div></div>';
+    '<div class="garantias"><strong>Garantías:</strong> ' + esc(GARANTIAS.adaptacion) + ' · ' + esc(GARANTIAS.armazon) + ' · ' + esc(GARANTIAS.tratamiento) + '.<br><strong>Próxima visita:</strong> ' + prox.toLocaleDateString('es-MX') + ' (10 meses).</div></div>'; // v2.3.12: sin firmas — Alfredo las quitó del comprobante.
 }
 function docMaterialesHTML(d) {
   const micas = (d && d.micas) || [];
@@ -1697,7 +1696,12 @@ function aplicarTamanoPagina(kind) {
    achica el dibujo. Así que el arreglo es que el contenido mismo sea
    más chico (métricas .72rem) y el área imprimible más grande
    (margen @page 1mm; el body ya tiene margin:0). El zoom queda como
-   red de seguridad. */
+   red de seguridad.
+   v2.3.12: Alfredo quitó las firmas del comprobante (no le sirven) y
+   pidió el documento centrado en la tarjeta: sin .sig en el DOM ni en
+   el pintor de canvas, y en print el comprobante lleva
+   justify-content:center con min-height 460px (por debajo del área
+   imprimible 472px). La historia clínica SÍ conserva sus firmas. */
 const ANCHO_TARJETA_PX = (3 * 96) - (2 * 3.78); // 3in menos 2x1mm = 280.44
 const ALTO_TARJETA_PX = (5 * 96) - (2 * 3.78);  // 5in menos 2x1mm = 472.44
 function medirAltoImpresoComprobante() {
@@ -1972,18 +1976,7 @@ function dibujarComprobante(ctx, doc, logo, escala, dibujar, marca, altoTotal) {
     parrafoMixto(ctx, [{ t: 'Próxima visita: ', b: true }, { t: prox.toLocaleDateString('es-MX') + ' (10 meses).' }], M + 10, y + 10 + g1 + 4 + 13, cw - 20, F, 13, 16, true, INK);
   }
   y += cajaH + 10;
-  // Firmas.
-  const lineaY = y + 14;
-  if (dibujar) {
-    ctx.strokeStyle = INK; ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(M, lineaY); ctx.lineTo(M + cw * 0.45, lineaY);
-    ctx.moveTo(W - M - cw * 0.45, lineaY); ctx.lineTo(W - M, lineaY);
-    ctx.stroke();
-    texto(ctx, 'Firma del cliente', M + cw * 0.225, lineaY + 16, '13px ' + F, INK, 'center', true);
-    texto(ctx, 'Boutique de Lentes Yael', W - M - cw * 0.225, lineaY + 16, '13px ' + F, INK, 'center', true);
-  }
-  y = lineaY + 16 + 6;
+  // v2.3.12: sin firmas — Alfredo las quitó del comprobante.
   return { ancho: Math.round(W * k), alto: Math.round((y + M) * k) };
 }
 /* Pinta el TICKET 58 mm en un ctx 2D (refleja .doc-ticket del DOM:
