@@ -1662,8 +1662,10 @@ const PAGE_SIZES = {
 };
 function aplicarTamanoPagina(kind) {
   const size = PAGE_SIZES[kind] || 'letter';
-  // v2.3.6: el comprobante va en tarjeta 3x5 con margen chico (3mm).
-  const margin = kind === 'ticket' ? '0' : (kind === 'comprobante' ? '3mm' : ((kind === 'historia') ? '5mm' : '8mm'));
+  // v2.3.6: el comprobante va en tarjeta 3x5 con margen chico.
+  // v2.3.11: margen 1mm — el contenido cabe en una sola tarjeta y
+  // el ancho extra (280px) quita un renglón al detalle del armazón.
+  const margin = kind === 'ticket' ? '0' : (kind === 'comprobante' ? '1mm' : ((kind === 'historia') ? '5mm' : '8mm'));
   let st = document.getElementById('pageSizeStyle');
   if (!st) {
     st = document.createElement('style');
@@ -1688,9 +1690,16 @@ function aplicarTamanoPagina(kind) {
    al revés de lo pedido; revertido en v2.3.10: todo el comprobante,
    firmas incluidas, va en UNA sola tarjeta 3x5. El zoom queda solo
    como red de seguridad para un comprobante muy largo; las métricas
-   de impresión se apretaron un poco más (.76rem) para que quepa. */
-const ANCHO_TARJETA_PX = (3 * 96) - (2 * 11.34); // 3in menos 2x3mm = 265.32
-const ALTO_TARJETA_PX = (5 * 96) - (2 * 11.34);  // 5in menos 2x3mm = 457.32
+   de impresión se apretaron un poco más (.76rem) para que quepa.
+   v2.3.11: la v15 seguía partiendo en 2 hojas (captura 1/2): el alto
+   natural del comprobante supera apenas el área imprimible y el zoom
+   NO mueve el salto de página en la impresión de Android — solo
+   achica el dibujo. Así que el arreglo es que el contenido mismo sea
+   más chico (métricas .72rem) y el área imprimible más grande
+   (margen @page 1mm; el body ya tiene margin:0). El zoom queda como
+   red de seguridad. */
+const ANCHO_TARJETA_PX = (3 * 96) - (2 * 3.78); // 3in menos 2x1mm = 280.44
+const ALTO_TARJETA_PX = (5 * 96) - (2 * 3.78);  // 5in menos 2x1mm = 472.44
 function medirAltoImpresoComprobante() {
   const docEl = document.querySelector('#view-doc .doc-comprobante');
   if (!docEl) return 0;
