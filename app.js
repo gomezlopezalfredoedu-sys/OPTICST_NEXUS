@@ -2305,9 +2305,17 @@ function init() {
   $('#lcTipo').addEventListener('change', actualizarMarcasLC);
   $('#lcMarca').addEventListener('change', actualizarMarcasLC);
   $('#lenteTratamiento').addEventListener('change', ev => { $('#filtroTonoWrap').hidden = ev.target.value !== 'Filtro color'; });
+  // v2.3.14: el concepto de la lista de micas trae el Precio_Estimado,
+  // que es el COSTO estimado de la mica (lo que Alfredo paga al
+  // proveedor), NO el precio de venta del lente. Antes se copiaba a
+  // #lentePrecio (precio de venta) y corrompía el total definido y el
+  // descuento, así que Alfredo tenía que borrarlo y volver a teclear
+  // el precio de venta. Ahora el estimado llena el Costo final de
+  // inversión (#pCostoInversion, paso 5), donde va el costo y se
+  // corrige al costo real; el precio de venta del lente se teclea.
   $('#lenteConcepto').addEventListener('change', ev => {
     const m = ev.target.value.match(/\$([\d.,]+)/);
-    if (m) $('#lentePrecio').value = m[1].replace(/,/g, '');
+    if (m) $('#pCostoInversion').value = m[1].replace(/,/g, '');
   });
   ['#pTotalManual', '#pACuenta'].forEach(s => $(s).addEventListener('input', actualizarPrecios));
   $('#pLiquidar').addEventListener('change', ev => {
