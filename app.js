@@ -1683,7 +1683,12 @@ function aplicarTamanoPagina(kind) {
    Y para que el zoom no achique la caja (eso dejaba el hueco abajo),
    la regla impresa compensa el tamaño: min-height y ancho se dividen
    por el zoom, así la caja renderizada sigue ocupando TODA la tarjeta
-   (banner arriba, firmas abajo) y el contenido cabe en una sola. */
+   (banner arriba, firmas abajo) y el contenido cabe en una sola.
+   v2.3.9 quitó la compensación y mandaba las firmas a una 2ª hoja —
+   al revés de lo pedido; revertido en v2.3.10: todo el comprobante,
+   firmas incluidas, va en UNA sola tarjeta 3x5. El zoom queda solo
+   como red de seguridad para un comprobante muy largo; las métricas
+   de impresión se apretaron un poco más (.76rem) para que quepa. */
 const ANCHO_TARJETA_PX = (3 * 96) - (2 * 11.34); // 3in menos 2x3mm = 265.32
 const ALTO_TARJETA_PX = (5 * 96) - (2 * 11.34);  // 5in menos 2x3mm = 457.32
 function medirAltoImpresoComprobante() {
@@ -1710,9 +1715,9 @@ function imprimirDoc() {
     // La regla va dentro de @media print: solo afecta a la impresión
     // y no deja el documento chico en pantalla. aplicarTamanoPagina
     // reescribe el <style> en cada impresión, así que no queda zoom viejo.
-    // min-height y width se dividen por z: el zoom achica el contenido
-    // pero la caja renderizada sigue midiendo la tarjeta completa.
-    if (st) st.textContent += ' @media print { #view-doc .doc-comprobante { zoom: ' + z.toFixed(3) + '; min-height: ' + (ALTO_TARJETA_PX / z).toFixed(1) + 'px; width: ' + (ANCHO_TARJETA_PX / z).toFixed(1) + 'px; } }';
+    // v2.3.10: solo zoom, sin min-height ni width — todo el
+    // comprobante, firmas incluidas, va en una sola tarjeta.
+    if (st) st.textContent += ' @media print { #view-doc .doc-comprobante { zoom: ' + z.toFixed(3) + '; } }';
   }
   window.print();
 }
