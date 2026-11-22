@@ -345,7 +345,12 @@ html,body,.doc,.doc-comprobante .banner-top,.doc-watermark,.orden-label-wm,.doc-
 .doc-comprobante.medir-print .garantias{font-size:.70rem;padding:.3rem .45rem}
 .doc-comprobante.medir-print p{margin:.25rem 0}
 @media print{
-  body{background:#fff}
+  /* v2.3.13: el padding-bottom del body (para la barra de navegación
+     inferior, ~92px) NO se reseteaba en print y se comía ese espacio
+     de la tarjeta, por eso el comprobante se partía en 2 hojas aunque
+     el contenido cupiera. Con padding-bottom:0 el PDF sale en 1 hoja
+     (verificado en Chromium real: 1 página, contenido completo). */
+  body{background:#fff;padding-bottom:0}
   .app-footer,.doc-toolbar,.wizard-nav,.btn,.bottom-nav{display:none!important}
   main{max-width:none;padding:0}
   .view{display:none!important}
