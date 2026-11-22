@@ -1672,26 +1672,35 @@ function aplicarTamanoPagina(kind) {
   }
   st.textContent = '@page { size: ' + size + '; margin: ' + margin + '; }';
 }
-/* ---------- v2.3.7: el comprobante cabe en UNA tarjeta 3x5 ----------
-   Aunque el @page es 3in x 5in, en el celular el contenido puede
-   superar el alto de la tarjeta (detalles largos del armazón/lente)
-   y caer a una 2ª página con espacio muerto. Antes de imprimir se
-   estima el alto del comprobante a ancho de tarjeta y, si se pasa,
-   se reduce con zoom (solo en impresión) para que quepa en una sola
-   tarjeta. El zoom nunca sube de 1 ni baja de 0.6 para que el texto
-   siga legible. */
-function zoomAjusteComprobante() {
+/* ---------- v2.3.8: el comprobante LLENA la tarjeta 3x5 ----------
+   v2.3.7 estimaba el alto con una fórmula (ancho pantalla / ancho
+   tarjeta x 0.8) que sobreestimaba: un comprobante que cabe a zoom 1
+   terminaba con zoom 0.6, chico y con la mitad de la tarjeta en blanco.
+   Ahora se MIDE el alto real: al elemento se le ponen por un instante
+   las métricas de impresión (clase medir-print + ancho de tarjeta) y
+   se lee su scrollHeight; la medición es síncrona, sin repintado
+   visible. El zoom solo baja si el contenido de verdad no cabe.
+   Y para que el zoom no achique la caja (eso dejaba el hueco abajo),
+   la regla impresa compensa el tamaño: min-height y ancho se dividen
+   por el zoom, así la caja renderizada sigue ocupando TODA la tarjeta
+   (banner arriba, firmas abajo) y el contenido cabe en una sola. */
+const ANCHO_TARJETA_PX = (3 * 96) - (2 * 11.34); // 3in menos 2x3mm = 265.32
+const ALTO_TARJETA_PX = (5 * 96) - (2 * 11.34);  // 5in menos 2x3mm = 457.32
+function medirAltoImpresoComprobante() {
   const docEl = document.querySelector('#view-doc .doc-comprobante');
-  if (!docEl || !docEl.scrollHeight) return 1;
-  const anchoPantalla = docEl.clientWidth || 360;
-  const altoPantalla = docEl.scrollHeight;
-  const anchoImprimiblePx = (3 * 96) - (2 * 11.34); // 3in menos 2x3mm
-  const altoImprimiblePx = (5 * 96) - (2 * 11.34);  // 5in menos 2x3mm
-  // Al estrecharse a ancho de tarjeta el texto da más vueltas (más alto);
-  // la fuente impresa es más chica (.78rem), lo que lo compensa en parte.
-  const altoEst = altoPantalla * (anchoPantalla / anchoImprimiblePx) * 0.8;
-  if (altoEst <= altoImprimiblePx) return 1;
-  return Math.max(0.6, altoImprimiblePx / altoEst);
+  if (!docEl) return 0;
+  const prevWidth = docEl.style.width;
+  docEl.classList.add('medir-print');
+  docEl.style.width = ANCHO_TARJETA_PX + 'px';
+  const h = docEl.scrollHeight || 0;
+  docEl.classList.remove('medir-print');
+  docEl.style.width = prevWidth;
+  return h;
+}
+function zoomAjusteComprobante() {
+  const altoNatural = medirAltoImpresoComprobante();
+  if (!altoNatural || altoNatural <= ALTO_TARJETA_PX) return 1;
+  return Math.max(0.6, ALTO_TARJETA_PX / altoNatural);
 }
 function imprimirDoc() {
   if (state.currentDoc) aplicarTamanoPagina(state.currentDoc.kind);
@@ -1701,7 +1710,9 @@ function imprimirDoc() {
     // La regla va dentro de @media print: solo afecta a la impresión
     // y no deja el documento chico en pantalla. aplicarTamanoPagina
     // reescribe el <style> en cada impresión, así que no queda zoom viejo.
-    if (st) st.textContent += ' @media print { #view-doc .doc-comprobante { zoom: ' + z.toFixed(3) + '; } }';
+    // min-height y width se dividen por z: el zoom achica el contenido
+    // pero la caja renderizada sigue midiendo la tarjeta completa.
+    if (st) st.textContent += ' @media print { #view-doc .doc-comprobante { zoom: ' + z.toFixed(3) + '; min-height: ' + (ALTO_TARJETA_PX / z).toFixed(1) + 'px; width: ' + (ANCHO_TARJETA_PX / z).toFixed(1) + 'px; } }';
   }
   window.print();
 }
