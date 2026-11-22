@@ -1585,7 +1585,10 @@ function docComprobanteHTML(d) {
     '<div class="doc-watermark" aria-hidden="true"></div>' +
     '<div class="banner-top"><img class="banner-logo" src="logo-yael-contorno-blanco.png" alt="Boutique de Lentes Yael"><div style="text-align:right"><div class="doc-title" style="color:#fff">Comprobante de venta</div><div>PEDIDO No. ' + esc(v.folio || v.id || '') + '</div><div>FECHA ' + fechaMX(v.fecha) + '</div></div></div>' +
     '<p><strong>Nombre:</strong> ' + esc(c.nombre || v.clienteNombre || '') + ' &nbsp; <strong>Móvil:</strong> ' + esc(c.telefono || v.telefono || '') + '</p>' +
-    '<table><tr><th>Concepto</th><th>Detalle</th><th>Precio</th></tr>' +
+    // v2.3.6: la tabla va envuelta en .doc-tabla para que el flex de
+    // impresión (que reparte el contenido por toda la tarjeta 3x5)
+    // no la desarme (una <table> directa como hijo flex se rompe).
+    '<div class="doc-tabla"><table><tr><th>Concepto</th><th>Detalle</th><th>Precio</th></tr>' +
     (v.armazonMaterial ? '<tr><td>Armazón</td><td>' + esc(v.armazonMaterial) + ' ' + esc(v.armazonDiseno) + ' · Modelo ' + esc(v.armazonModelo || '') + ' · Marca ' + esc(v.armazonMarca || '') + ' · Color ' + esc(v.armazonColor || '') + '</td><td>' + money(v.armazonPrecioDef) + '</td></tr>' : '') +
     (v.lenteMaterial ? '<tr><td>Lente</td><td>' + esc(v.lenteMaterial) + ' ' + esc(v.lenteDiseno) + ' · ' + esc(v.lenteTratamiento || '') + ' · Proveedor ' + esc(v.lenteProveedor || '') + '</td><td>' + money(v.lentePrecioDef) + '</td></tr>' : '') +
     (llevaLC(v) ? '<tr><td>Lente de contacto</td><td>' + esc(v.lcTipo) + ' · ' + esc(v.lcMarca || '') + ' · Caja de 6 lentes · Reemplazo mensual · BC ' + esc(v.lcCurvaBase || '') + ' · Ø ' + esc(v.lcDiametro || '') + '</td><td>' + money(v.lcPrecioDef) + '</td></tr>' : '') +
@@ -1595,7 +1598,7 @@ function docComprobanteHTML(d) {
     '<tr><td>Descuento</td><td></td><td>' + money(v.descuento) + '</td></tr>' +
     '<tr class="total-row"><td>Neto / Total</td><td></td><td>' + money(v.totalManual) + '</td></tr>' +
     '<tr><td>Anticipo / A cuenta</td><td></td><td>' + money(v.aCuenta) + '</td></tr>' +
-    '<tr><td>Saldo</td><td></td><td>' + money(v.saldo) + '</td></tr></table>' +
+    '<tr><td>Saldo</td><td></td><td>' + money(v.saldo) + '</td></tr></table></div>' +
     '<p><strong>Cantidad total en palabras:</strong> ' + esc(numeroALetras(v.totalManual)) + ' MXN.</p>' +
     '<div class="garantias"><strong>Garantías:</strong> ' + esc(GARANTIAS.adaptacion) + ' · ' + esc(GARANTIAS.armazon) + ' · ' + esc(GARANTIAS.tratamiento) + '.<br><strong>Próxima visita:</strong> ' + prox.toLocaleDateString('es-MX') + ' (10 meses).</div>' +
     '<div class="sig"><div>Firma del cliente</div><div>Boutique de Lentes Yael</div></div></div>';
@@ -1651,7 +1654,7 @@ async function abrirDoc(kind, ventaId, extra) {
    diálogo de impresión (antes salía en Quarto aunque el comprobante es
    media carta). Se llama al abrir el documento y al pulsar Imprimir. */
 const PAGE_SIZES = {
-  comprobante: '5.5in 8.5in',   // media carta
+  comprobante: '3in 5in',   // Index Card 3x5 (tarjeta)
   historia: '5.5in 8.5in',      // media carta
   orden: 'letter',              // carta
   ticket: '58mm auto',         // 58 mm
@@ -1659,10 +1662,8 @@ const PAGE_SIZES = {
 };
 function aplicarTamanoPagina(kind) {
   const size = PAGE_SIZES[kind] || 'letter';
-  // v2.1: margen más chico en comprobante/historia para que el
-  // comprobante quepa en una sola página media carta (antes las firmas
-  // caían a la 2ª con 8mm de margen).
-  const margin = kind === 'ticket' ? '0' : ((kind === 'comprobante' || kind === 'historia') ? '5mm' : '8mm');
+  // v2.3.6: el comprobante va en tarjeta 3x5 con margen chico (3mm).
+  const margin = kind === 'ticket' ? '0' : (kind === 'comprobante' ? '3mm' : ((kind === 'historia') ? '5mm' : '8mm'));
   let st = document.getElementById('pageSizeStyle');
   if (!st) {
     st = document.createElement('style');
@@ -2073,10 +2074,13 @@ async function compartirDoc() {
   if (!doc) return;
   const v = doc.venta || {};
   const c = doc.cliente || {};
-  const tipoTxt = doc.kind === 'ticket' ? 'Ticket' : 'Comprobante de venta';
-  const texto = 'Boutique de Lentes Yael (Calle 4) — ' + tipoTxt + ' ' + (v.folio || '') +
-    ' · Cliente: ' + (c.nombre || v.clienteNombre || '') + ' · Total: ' + money(v.totalManual) + ' · Pagado: ' + money(v.aCuenta) + ' · Saldo: ' + money(v.saldo) +
-    (v.saldo > 0 ? ' · Pendiente de liquidar al recoger.' : ' · Liquidado. ¡Gracias por su preferencia!');
+  // v2.3.5: mensaje de WhatsApp como el del ticket que le gusta a
+  // Alfredo — saludo personal, sin el texto largo predeterminado
+  // ("Boutique de Lentes Yael (Calle 4) — Comprobante de venta
+  // VTA-0001 · Cliente: … · Total: …"). Los totales ya van dentro
+  // de la imagen del documento.
+  const tipoTxt = doc.kind === 'ticket' ? 'ticket' : 'comprobante de venta';
+  const texto = 'Hola ' + (c.nombre || v.clienteNombre || '') + ', te compartimos tu ' + tipoTxt + ' de Boutique de Lentes Yael.';
   const btn = $('#btnDocCompartir');
   const etiquetaOriginal = btn ? btn.textContent : '';
   const folioLimpio = String(v.folio || doc.kind).replace(/[^A-Za-z0-9_-]/g, '') || doc.kind;
